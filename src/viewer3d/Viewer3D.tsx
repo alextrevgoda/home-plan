@@ -1,13 +1,14 @@
 import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
+import { DoubleSide } from 'three'
 import { polygonToRect } from '../model/geometry'
-import type { Room } from '../model/types'
+import type { Opening, Plan, Room } from '../model/types'
 import { usePlanStore } from '../store/planStore'
-import { WALL_THICKNESS, wallsForPolygon } from './walls'
+import { fillForOpening, wallSegmentsForRoom } from './walls'
 
 export function Viewer3D() {
   const plan = usePlanStore((s) => s.plan)
-  const { width, depth, wallHeight } = plan.apartment
+  const { width, depth } = plan.apartment
 
   return (
     <Canvas
@@ -27,7 +28,10 @@ export function Viewer3D() {
         </mesh>
 
         {plan.rooms.map((room) => (
-          <RoomMesh key={room.id} room={room} wallHeight={wallHeight} />
+          <RoomMesh key={room.id} room={room} plan={plan} />
+        ))}
+        {plan.openings.map((opening) => (
+          <OpeningFillMesh key={opening.id} opening={opening} plan={plan} />
         ))}
       </group>
 
@@ -36,7 +40,7 @@ export function Viewer3D() {
   )
 }
 
-function RoomMesh({ room, wallHeight }: { room: Room; wallHeight: number }) {
+function RoomMesh({ room, plan }: { room: Room; plan: Plan }) {
   const rect = polygonToRect(room.polygon)
   return (
     <group>
@@ -50,12 +54,27 @@ function RoomMesh({ room, wallHeight }: { room: Room; wallHeight: number }) {
           <meshStandardMaterial color={room.color} />
         </mesh>
       )}
-      {wallsForPolygon(room.polygon, wallHeight).map((wall, i) => (
-        <mesh key={i} position={wall.center} rotation-y={wall.rotationY} castShadow receiveShadow>
-          <boxGeometry args={[wall.length, wallHeight, WALL_THICKNESS]} />
+      {wallSegmentsForRoom(room, plan).map((piece, i) => (
+        <mesh key={i} position={piece.center} rotation-y={piece.rotationY} castShadow receiveShadow>
+          <boxGeometry args={piece.size} />
           <meshStandardMaterial color="#f5f5f0" />
         </mesh>
       ))}
     </group>
+  )
+}
+
+function OpeningFillMesh({ opening, plan }: { opening: Opening; plan: Plan }) {
+  const fill = fillForOpening(opening, plan)
+  if (!fill) return null
+  return (
+    <mesh position={fill.center} rotation-y={fill.rotationY} castShadow={fill.kind === 'door'}>
+      <boxGeometry args={fill.size} />
+      {fill.kind === 'door' ? (
+        <meshStandardMaterial color="#9c6b3f" />
+      ) : (
+        <meshStandardMaterial color="#bfe0f2" transparent opacity={0.35} side={DoubleSide} />
+      )}
+    </mesh>
   )
 }
