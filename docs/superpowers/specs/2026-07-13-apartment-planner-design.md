@@ -56,7 +56,9 @@ backend reuses the same serializer.
 ## Data model
 
 Meters internally, cm precision (values rounded to 0.01). 2D coordinates are Y-down,
-matching screen space; the 3D view maps plan (x, y) → (x, z).
+matching screen space, with the origin (0, 0) at the apartment boundary's top-left
+corner; room positions are expressed in this coordinate system. The 3D view maps
+plan (x, y) → (x, z).
 
 ```ts
 interface Plan {
