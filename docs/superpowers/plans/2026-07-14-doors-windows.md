@@ -1803,7 +1803,11 @@ In `onKeyDown`, replace the Delete/Backspace branch and add an Escape branch bef
           else if (store.selection?.kind === 'room') store.deleteRoom(store.selection.id)
           return
         }
-        if (ev.key === 'Escape') {
+        if (ev.key === 'Escape' && !isTypingTarget(ev)) {
+          if (drag.kind !== 'idle') {
+            drag = { kind: 'idle' }
+            guides = []
+          }
           const store = usePlanStore.getState()
           if (store.placing) store.setPlacing(null)
           else store.selectRoom(null)
