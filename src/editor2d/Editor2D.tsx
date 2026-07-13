@@ -1,12 +1,13 @@
 import { Application, Container, Graphics } from 'pixi.js'
 import { useEffect, useRef } from 'react'
-import { polygonToRect } from '../model/geometry'
+import { roundCm, polygonToRect } from '../model/geometry'
+import { projectOntoEdge, roomEdge } from '../model/openings'
 import { collectSnapLines, snapMove, snapScalar, type SnapGuide, type SnapOptions } from '../model/snapping'
 import type { Rect, Vec2 } from '../model/types'
 import { usePlanStore } from '../store/planStore'
 import { useToast } from '../ui/toast'
-import { applyResize, hitHandle, hitRoom, type HandleId } from './interactions'
-import { drawBoundary, drawGrid, drawGuides, drawHandles, drawRooms } from './render'
+import { applyResize, hitHandle, hitOpening, hitRoom, nearestEdge, type EdgeHit, type HandleId } from './interactions'
+import { drawBoundary, drawEdgeHighlight, drawGrid, drawGuides, drawHandles, drawOpenings, drawRooms } from './render'
 import { fitApartment, screenToWorld, zoomAt, type Viewport } from './viewport'
 
 function isTypingTarget(ev: KeyboardEvent) {
@@ -34,10 +35,20 @@ export function Editor2D() {
         grid: new Graphics(),
         boundary: new Graphics(),
         rooms: new Container(),
+        openings: new Graphics(),
+        edgeHighlight: new Graphics(),
         guides: new Graphics(),
         handles: new Graphics(),
       }
-      app.stage.addChild(layers.grid, layers.boundary, layers.rooms, layers.guides, layers.handles)
+      app.stage.addChild(
+        layers.grid,
+        layers.boundary,
+        layers.rooms,
+        layers.openings,
+        layers.edgeHighlight,
+        layers.guides,
+        layers.handles,
+      )
 
       let viewport: Viewport = fitApartment(
         app.screen.width,
@@ -59,7 +70,9 @@ export function Editor2D() {
         | { kind: 'idle' }
         | { kind: 'move'; roomId: string; grabOffset: Vec2 }
         | { kind: 'resize'; roomId: string; handle: HandleId }
+        | { kind: 'moveOpening'; openingId: string }
       let drag: DragState = { kind: 'idle' }
+      let hoverEdge: EdgeHit | null = null
       let guides: SnapGuide[] = []
       let altDown = false
 
@@ -85,20 +98,39 @@ export function Editor2D() {
           return
         }
         const store = usePlanStore.getState()
+        const screen = { x: e.global.x, y: e.global.y }
+        const world = screenToWorld(viewport, screen)
+
+        // armed placement: click places on the nearest wall, or cancels
+        if (store.placing) {
+          const hit = nearestEdge(store.plan, viewport, screen)
+          if (hit) store.addOpening(store.placing, hit.roomId, hit.edgeIndex, hit.offset)
+          else store.setPlacing(null)
+          hoverEdge = null
+          markDirty()
+          return
+        }
+
+        // openings are small targets on walls — they win over room bodies
+        const openingId = hitOpening(store.plan, viewport, screen)
+        if (openingId) {
+          store.selectOpening(openingId)
+          drag = { kind: 'moveOpening', openingId }
+          markDirty()
+          return
+        }
 
         const sel = store.selection
         const selectedRoom =
           sel?.kind === 'room' ? store.plan.rooms.find((r) => r.id === sel.id) : undefined
         const selectedRect = selectedRoom ? polygonToRect(selectedRoom.polygon) : null
         if (selectedRoom && selectedRect) {
-          const handle = hitHandle(selectedRect, viewport, { x: e.global.x, y: e.global.y })
+          const handle = hitHandle(selectedRect, viewport, screen)
           if (handle) {
             drag = { kind: 'resize', roomId: selectedRoom.id, handle }
             return
           }
         }
-
-        const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
         const roomId = hitRoom(store.plan.rooms, world)
         store.selectRoom(roomId)
         if (roomId) {
@@ -115,6 +147,12 @@ export function Editor2D() {
             offsetY: viewport.offsetY + e.global.y - panning.lastY,
           }
           panning = { lastX: e.global.x, lastY: e.global.y }
+          markDirty()
+          return
+        }
+        const hoverStore = usePlanStore.getState()
+        if (hoverStore.placing) {
+          hoverEdge = nearestEdge(hoverStore.plan, viewport, { x: e.global.x, y: e.global.y })
           markDirty()
           return
         }
@@ -171,6 +209,18 @@ export function Editor2D() {
           store.updateRoomRect(activeDrag.roomId, applyResize(rect, activeDrag.handle, point))
           markDirty()
         }
+
+        if (drag.kind === 'moveOpening') {
+          const activeDrag = drag
+          const store = usePlanStore.getState()
+          const opening = store.plan.openings.find((o) => o.id === activeDrag.openingId)
+          const room = opening ? store.plan.rooms.find((r) => r.id === opening.roomId) : undefined
+          const edge = opening && room ? roomEdge(room, opening.edgeIndex) : null
+          if (!opening || !edge) return
+          const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+          store.moveOpening(activeDrag.openingId, roundCm(projectOntoEdge(edge, world)))
+          markDirty()
+        }
       })
 
       const endInteraction = () => {
@@ -204,7 +254,16 @@ export function Editor2D() {
         altDown = ev.altKey
         if ((ev.key === 'Delete' || ev.key === 'Backspace') && !isTypingTarget(ev)) {
           const store = usePlanStore.getState()
-          if (store.selection?.kind === 'room') store.deleteRoom(store.selection.id)
+          if (store.selection?.kind === 'opening') store.deleteOpening(store.selection.id)
+          else if (store.selection?.kind === 'room') store.deleteRoom(store.selection.id)
+          return
+        }
+        if (ev.key === 'Escape') {
+          const store = usePlanStore.getState()
+          if (store.placing) store.setPlacing(null)
+          else store.selectRoom(null)
+          hoverEdge = null
+          markDirty()
           return
         }
         if (ev.code === 'Space' && !isTypingTarget(ev)) {
@@ -232,6 +291,9 @@ export function Editor2D() {
         const sel = store.selection
         const selectedId = sel?.kind === 'room' ? sel.id : null
         drawRooms(layers.rooms, store.plan, selectedId, viewport)
+        drawOpenings(layers.openings, store.plan, store.selection, viewport)
+        drawEdgeHighlight(layers.edgeHighlight, store.placing ? hoverEdge : null, store.plan, viewport)
+        app.canvas.style.cursor = store.placing ? 'crosshair' : 'default'
         drawGuides(layers.guides, guides, viewport, app.screen.width, app.screen.height)
         const selectedRoom = selectedId
           ? store.plan.rooms.find((r) => r.id === selectedId)
