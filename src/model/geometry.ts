@@ -25,7 +25,7 @@ export function polygonToRect(polygon: Vec2[]): Rect | null {
   if (rect.width === 0 || rect.height === 0) return null
   const corners = rectToPolygon(rect)
   const matches = corners.every((c) => polygon.some((p) => p.x === c.x && p.y === c.y))
-  return matches ? rect : null
+  return matches ? { x: roundCm(x), y: roundCm(y), width: roundCm(rect.width), height: roundCm(rect.height) } : null
 }
 
 export function polygonArea(polygon: Vec2[]): number {

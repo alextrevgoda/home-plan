@@ -54,6 +54,11 @@ describe('rectToPolygon / polygonToRect', () => {
       ]),
     ).toBeNull()
   })
+
+  it('returns cm-rounded dimensions despite float subtraction noise', () => {
+    const rect = polygonToRect(rectToPolygon({ x: 1.6, y: 1.2, width: 3, height: 3 }))
+    expect(rect).toEqual({ x: 1.6, y: 1.2, width: 3, height: 3 })
+  })
 })
 
 describe('polygonArea', () => {
