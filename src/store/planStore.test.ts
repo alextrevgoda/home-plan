@@ -4,7 +4,7 @@ import { createDefaultPlan } from '../model/serialization'
 import { usePlanStore } from './planStore'
 
 beforeEach(() => {
-  usePlanStore.setState({ plan: createDefaultPlan(), selection: null, mode: '2d' })
+  usePlanStore.setState({ plan: createDefaultPlan(), selection: null, mode: '2d', placing: null })
 })
 
 describe('addRoom', () => {
@@ -92,5 +92,96 @@ describe('loadPlan / setMode / selectRoom', () => {
   it('selectOpening sets an opening selection', () => {
     usePlanStore.getState().selectOpening('o1')
     expect(usePlanStore.getState().selection).toEqual({ kind: 'opening', id: 'o1' })
+  })
+})
+
+describe('openings', () => {
+  const addRoomAndDoor = () => {
+    const roomId = usePlanStore.getState().addRoom() // 3×3 room, edges of length 3
+    const openingId = usePlanStore.getState().addOpening('door', roomId, 0, 1.5)
+    return { roomId, openingId }
+  }
+
+  it('addOpening applies kind defaults, clamps offset, selects, disarms placement', () => {
+    const roomId = usePlanStore.getState().addRoom()
+    usePlanStore.getState().setPlacing('door')
+    const id = usePlanStore.getState().addOpening('door', roomId, 0, 0.1)
+    const s = usePlanStore.getState()
+    expect(s.plan.openings).toHaveLength(1)
+    expect(s.plan.openings[0]).toMatchObject({
+      kind: 'door',
+      roomId,
+      edgeIndex: 0,
+      offset: 0.45,
+      width: 0.9,
+      height: 2.1,
+      sillHeight: 0,
+    })
+    expect(s.selection).toEqual({ kind: 'opening', id })
+    expect(s.placing).toBeNull()
+  })
+
+  it('addOpening no-ops and returns empty id for an unknown room or bad edge', () => {
+    expect(usePlanStore.getState().addOpening('door', 'nope', 0, 1)).toBe('')
+    const roomId = usePlanStore.getState().addRoom()
+    expect(usePlanStore.getState().addOpening('window', roomId, 9, 1)).toBe('')
+    expect(usePlanStore.getState().plan.openings).toHaveLength(0)
+  })
+
+  it('setPlacing deselects', () => {
+    usePlanStore.getState().addRoom()
+    usePlanStore.getState().setPlacing('window')
+    const s = usePlanStore.getState()
+    expect(s.placing).toBe('window')
+    expect(s.selection).toBeNull()
+  })
+
+  it('moveOpening clamps along the edge', () => {
+    const { openingId } = addRoomAndDoor()
+    usePlanStore.getState().moveOpening(openingId, 5)
+    expect(usePlanStore.getState().plan.openings[0].offset).toBe(2.55)
+    usePlanStore.getState().moveOpening(openingId, Number.NaN)
+    expect(usePlanStore.getState().plan.openings[0].offset).toBe(2.55)
+  })
+
+  it('updateOpening clamps width and keeps doors at sill 0', () => {
+    const { openingId } = addRoomAndDoor()
+    usePlanStore.getState().updateOpening(openingId, { width: 0.1, sillHeight: 1 })
+    const o = usePlanStore.getState().plan.openings[0]
+    expect(o.width).toBe(0.3)
+    expect(o.sillHeight).toBe(0)
+  })
+
+  it('updateOpening clamps window height against the wall', () => {
+    const roomId = usePlanStore.getState().addRoom()
+    const id = usePlanStore.getState().addOpening('window', roomId, 0, 1.5)
+    usePlanStore.getState().updateOpening(id, { height: 5 })
+    const o = usePlanStore.getState().plan.openings[0]
+    // wallHeight 2.7, sill 0.9 → height ≤ 2.7 − 0.1 − 0.9 = 1.7
+    expect(o.height).toBe(1.7)
+  })
+
+  it('resizing the room re-clamps its openings', () => {
+    const { roomId, openingId } = addRoomAndDoor()
+    usePlanStore.getState().moveOpening(openingId, 2.55)
+    usePlanStore.getState().updateRoomRect(roomId, { x: 3.5, y: 2.5, width: 1, height: 3 })
+    // edge 0 is now 1 m long; door 0.9 wide → offset ∈ [0.45, 0.55]
+    expect(usePlanStore.getState().plan.openings[0].offset).toBe(0.55)
+  })
+
+  it('deleting the room cascades its openings and clears their selection', () => {
+    const { roomId } = addRoomAndDoor()
+    usePlanStore.getState().deleteRoom(roomId)
+    const s = usePlanStore.getState()
+    expect(s.plan.openings).toHaveLength(0)
+    expect(s.selection).toBeNull()
+  })
+
+  it('deleteOpening removes it and clears its selection', () => {
+    const { openingId } = addRoomAndDoor()
+    usePlanStore.getState().deleteOpening(openingId)
+    const s = usePlanStore.getState()
+    expect(s.plan.openings).toHaveLength(0)
+    expect(s.selection).toBeNull()
   })
 })
