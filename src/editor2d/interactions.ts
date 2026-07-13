@@ -1,6 +1,7 @@
-import { MIN_ROOM_SIZE, polygonToRect } from '../model/geometry'
-import type { Rect, Room, Vec2 } from '../model/types'
-import { worldToScreen, type Viewport } from './viewport'
+import { MIN_ROOM_SIZE, polygonToRect, roundCm } from '../model/geometry'
+import type { Plan, Rect, Room, Vec2 } from '../model/types'
+import { worldToScreen, screenToWorld, type Viewport } from './viewport'
+import { openingSpan, projectOntoEdge, roomEdge } from '../model/openings'
 
 export const HANDLE_IDS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const
 export type HandleId = (typeof HANDLE_IDS)[number]
@@ -66,4 +67,52 @@ export function applyResize(rect: Rect, handle: HandleId, p: Vec2): Rect {
     height = Math.max(MIN_ROOM_SIZE, p.y - y)
   }
   return { x, y, width, height }
+}
+
+export function distToSegmentScreen(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len2 = dx * dx + dy * dy
+  const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t))
+}
+
+export function hitOpening(plan: Plan, viewport: Viewport, screen: Vec2, radius = 8): string | null {
+  for (let i = plan.openings.length - 1; i >= 0; i--) {
+    const opening = plan.openings[i]
+    const room = plan.rooms.find((r) => r.id === opening.roomId)
+    if (!room) continue
+    const span = openingSpan(opening, room)
+    if (!span) continue
+    const a = worldToScreen(viewport, span.a)
+    const b = worldToScreen(viewport, span.b)
+    if (distToSegmentScreen(screen, a, b) <= radius) return opening.id
+  }
+  return null
+}
+
+export interface EdgeHit {
+  roomId: string
+  edgeIndex: number
+  offset: number
+}
+
+export function nearestEdge(plan: Plan, viewport: Viewport, screen: Vec2, radius = 10): EdgeHit | null {
+  let best: EdgeHit | null = null
+  let bestDist = radius
+  for (const room of plan.rooms) {
+    for (let i = 0; i < room.polygon.length; i++) {
+      const edge = roomEdge(room, i)
+      if (!edge) continue
+      const a = worldToScreen(viewport, edge.a)
+      const b = worldToScreen(viewport, edge.b)
+      const d = distToSegmentScreen(screen, a, b)
+      if (d <= bestDist) {
+        bestDist = d
+        const world = screenToWorld(viewport, screen)
+        best = { roomId: room.id, edgeIndex: i, offset: roundCm(projectOntoEdge(edge, world)) }
+      }
+    }
+  }
+  return best
 }

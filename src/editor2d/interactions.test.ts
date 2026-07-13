@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { createDefaultPlan } from '../model/serialization'
 import { rectToPolygon } from '../model/geometry'
-import type { Room } from '../model/types'
-import { applyResize, handlePositions, hitHandle, hitRoom } from './interactions'
+import type { Opening, Plan, Room } from '../model/types'
+import { applyResize, distToSegmentScreen, handlePositions, hitHandle, hitOpening, hitRoom, nearestEdge } from './interactions'
 
 const roomAt = (x: number, y: number, w: number, h: number, id: string): Room => ({
   id,
@@ -61,5 +62,55 @@ describe('applyResize', () => {
 
   it('resizes two edges from a corner handle', () => {
     expect(applyResize(rect, 'se', { x: 5, y: 4 })).toEqual({ x: 1, y: 1, width: 4, height: 3 })
+  })
+})
+
+const planWithOpenings = (openings: Opening[]): Plan => ({
+  ...createDefaultPlan(),
+  rooms: [roomAt(0, 0, 4, 3, 'A')],
+  openings,
+})
+
+const doorA: Opening = {
+  id: 'd1',
+  kind: 'door',
+  roomId: 'A',
+  edgeIndex: 0,
+  offset: 2,
+  width: 1,
+  height: 2.1,
+  sillHeight: 0,
+}
+
+describe('distToSegmentScreen', () => {
+  it('measures perpendicular and endpoint distances', () => {
+    expect(distToSegmentScreen({ x: 5, y: 3 }, { x: 0, y: 0 }, { x: 10, y: 0 })).toBe(3)
+    expect(distToSegmentScreen({ x: -4, y: 0 }, { x: 0, y: 0 }, { x: 10, y: 0 })).toBe(4)
+  })
+})
+
+describe('hitOpening', () => {
+  const viewport = { offsetX: 0, offsetY: 0, scale: 100 }
+
+  it('hits an opening near its span', () => {
+    // span (1.5,0)→(2.5,0) → screen (150,0)→(250,0)
+    expect(hitOpening(planWithOpenings([doorA]), viewport, { x: 200, y: 5 })).toBe('d1')
+  })
+
+  it('misses outside the radius', () => {
+    expect(hitOpening(planWithOpenings([doorA]), viewport, { x: 200, y: 20 })).toBeNull()
+  })
+})
+
+describe('nearestEdge', () => {
+  const viewport = { offsetX: 0, offsetY: 0, scale: 100 }
+
+  it('finds the nearest room edge and projects the offset', () => {
+    const hit = nearestEdge(planWithOpenings([]), viewport, { x: 200, y: -5 })
+    expect(hit).toEqual({ roomId: 'A', edgeIndex: 0, offset: 2 })
+  })
+
+  it('returns null when no edge is within the radius', () => {
+    expect(nearestEdge(planWithOpenings([]), viewport, { x: 200, y: 150 })).toBeNull()
   })
 })
