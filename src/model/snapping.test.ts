@@ -18,7 +18,8 @@ describe('snapScalar', () => {
   })
 
   it('prefers an edge snap over a closer grid line', () => {
-    expect(snapScalar(2.04, [2.08], opts)).toEqual({ value: 2.08, guide: 2.08 })
+    // grid line 2.0 is 0.03 away; edge candidate 2.08 is 0.05 away — edge still wins
+    expect(snapScalar(2.03, [2.08], opts)).toEqual({ value: 2.08, guide: 2.08 })
   })
 
   it('falls back to the grid when no candidate is close', () => {
@@ -49,5 +50,12 @@ describe('snapMove', () => {
   it('grid-snaps without guides when no edge is near', () => {
     const res = snapMove({ x: 5.02, y: 3.48, width: 1, height: 1 }, { xs: [], ys: [] }, opts)
     expect(res).toEqual({ x: 5, y: 3.5, guides: [] })
+  })
+
+  it('picks the edge with the smaller correction when both edges match candidates', () => {
+    // leading edge 2.05 is 0.05 from candidate 2; trailing edge 5.05 is 0.03 from candidate 5.02
+    const res = snapMove({ x: 2.05, y: 3.33, width: 3, height: 2 }, { xs: [2, 5.02], ys: [] }, opts)
+    expect(res.x).toBe(2.02)
+    expect(res.guides).toContainEqual({ axis: 'x', position: 5.02 })
   })
 })
