@@ -1,3 +1,4 @@
+import { Editor2D } from '../editor2d/Editor2D'
 import { usePlanStore } from '../store/planStore'
 import { PropertiesPanel } from './PropertiesPanel'
 import { Toolbar } from './Toolbar'
@@ -10,7 +11,7 @@ export default function App() {
       <Toolbar />
       <div className="main">
         <div className="canvas-area">
-          {mode === '2d' ? <div data-testid="canvas-2d" /> : <div data-testid="canvas-3d" />}
+          {mode === '2d' ? <Editor2D /> : <div data-testid="canvas-3d" />}
         </div>
         <PropertiesPanel />
       </div>

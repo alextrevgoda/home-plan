@@ -1,8 +1,13 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createDefaultPlan } from '../model/serialization'
 import { usePlanStore } from '../store/planStore'
 import App from './App'
+
+// jsdom cannot init WebGL, so Editor2D is mocked in App tests.
+vi.mock('../editor2d/Editor2D', () => ({
+  Editor2D: () => <div data-testid="canvas-2d" />,
+}))
 
 beforeEach(() => {
   usePlanStore.setState({ plan: createDefaultPlan(), selectedRoomId: null, mode: '2d' })
