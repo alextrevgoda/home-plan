@@ -26,6 +26,14 @@ describe('updateRoomRect', () => {
     const rect = polygonToRect(usePlanStore.getState().plan.rooms[0].polygon)
     expect(rect).toEqual({ x: 1.23, y: 2, width: 0.5, height: 3.46 })
   })
+
+  it('rejects non-finite x and leaves polygon unchanged', () => {
+    const id = usePlanStore.getState().addRoom()
+    const polygonBefore = usePlanStore.getState().plan.rooms[0].polygon
+    usePlanStore.getState().updateRoomRect(id, { x: NaN, y: 2, width: 3, height: 3 })
+    const polygonAfter = usePlanStore.getState().plan.rooms[0].polygon
+    expect(polygonAfter).toEqual(polygonBefore)
+  })
 })
 
 describe('setApartment', () => {
@@ -33,6 +41,13 @@ describe('setApartment', () => {
     usePlanStore.getState().setApartment({ width: 500, wallHeight: 1 })
     const a = usePlanStore.getState().plan.apartment
     expect(a).toEqual({ width: 100, depth: 8, wallHeight: 2 })
+  })
+
+  it('rejects non-finite width and leaves apartment unchanged', () => {
+    const apartmentBefore = usePlanStore.getState().plan.apartment
+    usePlanStore.getState().setApartment({ width: NaN })
+    const apartmentAfter = usePlanStore.getState().plan.apartment
+    expect(apartmentAfter).toEqual(apartmentBefore)
   })
 })
 

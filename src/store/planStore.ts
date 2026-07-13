@@ -33,6 +33,9 @@ export const usePlanStore = create<PlanState>((set) => ({
 
   setApartment: (patch) =>
     set((s) => {
+      if (patch.width !== undefined && !Number.isFinite(patch.width)) return s
+      if (patch.depth !== undefined && !Number.isFinite(patch.depth)) return s
+      if (patch.wallHeight !== undefined && !Number.isFinite(patch.wallHeight)) return s
       const a = { ...s.plan.apartment, ...patch }
       const apartment: Apartment = {
         width: roundCm(clamp(a.width, 1, 100)),
@@ -65,6 +68,9 @@ export const usePlanStore = create<PlanState>((set) => ({
 
   updateRoomRect: (id, rect) =>
     set((s) => {
+      if (!Number.isFinite(rect.x) || !Number.isFinite(rect.y) || !Number.isFinite(rect.width) || !Number.isFinite(rect.height)) {
+        return s
+      }
       const clamped: Rect = {
         x: roundCm(rect.x),
         y: roundCm(rect.y),
@@ -72,7 +78,7 @@ export const usePlanStore = create<PlanState>((set) => ({
         height: roundCm(Math.max(MIN_ROOM_SIZE, rect.height)),
       }
       const polygon = rectToPolygon(clamped)
-      if (polygonArea(polygon) === 0) return s
+      if (!(polygonArea(polygon) > 0)) return s
       return {
         plan: {
           ...s.plan,
