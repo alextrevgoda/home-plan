@@ -17,18 +17,30 @@ export function loadFromStorage(storage: Storage): LoadResult {
   const plan = parsePlan(raw)
   if (plan) return { plan, recovered: false }
 
-  storage.setItem(BACKUP_KEY, raw)
+  try {
+    storage.setItem(BACKUP_KEY, raw)
+  } catch {
+    // best-effort backup only; corrupted data recovery must not be blocked by storage failures
+  }
   return { plan: createDefaultPlan(), recovered: true }
 }
 
-export function startAutosave(storage: Storage, debounceMs = 500): () => void {
+export function startAutosave(storage: Storage, debounceMs = 500, onError?: () => void): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined
+  let didReportError = false
 
   const unsubscribe = usePlanStore.subscribe((state, prev) => {
     if (state.plan === prev.plan) return
     clearTimeout(timer)
     timer = setTimeout(() => {
-      storage.setItem(STORAGE_KEY, serializePlan(usePlanStore.getState().plan))
+      try {
+        storage.setItem(STORAGE_KEY, serializePlan(usePlanStore.getState().plan))
+      } catch {
+        if (!didReportError) {
+          didReportError = true
+          onError?.()
+        }
+      }
     }, debounceMs)
   })
 

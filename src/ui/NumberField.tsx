@@ -15,8 +15,12 @@ export function NumberField({ label, value, onCommit }: Props) {
 
   const commit = () => {
     const n = Number(text)
-    if (Number.isFinite(n)) onCommit(n)
-    else setText(String(value))
+    if (text.trim() === '' || !Number.isFinite(n)) {
+      setText(String(value))
+      return
+    }
+    onCommit(n)
+    setText(String(value)) // re-sync now; if the store accepts a new value the [value] effect overwrites this
   }
 
   return (

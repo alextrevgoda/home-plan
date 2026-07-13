@@ -4,6 +4,7 @@ import { polygonToRect } from '../model/geometry'
 import { collectSnapLines, snapMove, snapScalar, type SnapGuide, type SnapOptions } from '../model/snapping'
 import type { Rect, Vec2 } from '../model/types'
 import { usePlanStore } from '../store/planStore'
+import { useToast } from '../ui/toast'
 import { applyResize, hitHandle, hitRoom, type HandleId } from './interactions'
 import { drawBoundary, drawGrid, drawGuides, drawHandles, drawRooms } from './render'
 import { fitApartment, screenToWorld, zoomAt, type Viewport } from './viewport'
@@ -233,6 +234,9 @@ export function Editor2D() {
         const selected = store.plan.rooms.find((r) => r.id === store.selectedRoomId)
         drawHandles(layers.handles, selected ? polygonToRect(selected.polygon) : null, viewport)
       })
+    })
+    .catch(() => {
+      useToast.getState().show('Could not initialize the 2D canvas — WebGL appears to be unavailable.')
     })
 
     return () => {

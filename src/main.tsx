@@ -13,7 +13,9 @@ if (recovered) {
     .getState()
     .show('Saved plan was corrupted — started fresh. Old data kept under "home-plan.backup".')
 }
-startAutosave(localStorage)
+startAutosave(localStorage, 500, () =>
+  useToast.getState().show('Autosave failed — your browser storage may be full or blocked.'),
+)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -73,4 +73,27 @@ describe('startAutosave', () => {
     expect(storage.getItem(STORAGE_KEY)).toBeNull()
     stop()
   })
+
+  it('swallows storage write failures and reports onError at most once per session', () => {
+    vi.useFakeTimers()
+    const storage = memoryStorage()
+    const throwing: Storage = {
+      ...storage,
+      setItem: () => {
+        throw new Error('quota exceeded')
+      },
+    }
+    const onError = vi.fn()
+    const stop = startAutosave(throwing, 500, onError)
+
+    usePlanStore.getState().addRoom()
+    expect(() => vi.advanceTimersByTime(500)).not.toThrow()
+    expect(onError).toHaveBeenCalledTimes(1)
+
+    usePlanStore.getState().addRoom()
+    expect(() => vi.advanceTimersByTime(500)).not.toThrow()
+    expect(onError).toHaveBeenCalledTimes(1)
+
+    stop()
+  })
 })
