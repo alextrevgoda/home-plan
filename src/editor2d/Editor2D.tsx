@@ -1,8 +1,10 @@
-import { Application, Graphics } from 'pixi.js'
+import { Application, Container, Graphics } from 'pixi.js'
 import { useEffect, useRef } from 'react'
+import { polygonToRect } from '../model/geometry'
 import { usePlanStore } from '../store/planStore'
-import { drawBoundary, drawGrid } from './render'
-import { fitApartment, zoomAt, type Viewport } from './viewport'
+import { hitRoom } from './interactions'
+import { drawBoundary, drawGrid, drawHandles, drawRooms } from './render'
+import { fitApartment, screenToWorld, zoomAt, type Viewport } from './viewport'
 
 function isTypingTarget(ev: KeyboardEvent) {
   const t = ev.target as HTMLElement | null
@@ -28,8 +30,10 @@ export function Editor2D() {
       const layers = {
         grid: new Graphics(),
         boundary: new Graphics(),
+        rooms: new Container(),
+        handles: new Graphics(),
       }
-      app.stage.addChild(layers.grid, layers.boundary)
+      app.stage.addChild(layers.grid, layers.boundary, layers.rooms, layers.handles)
 
       let viewport: Viewport = fitApartment(
         app.screen.width,
@@ -53,7 +57,11 @@ export function Editor2D() {
       app.stage.on('pointerdown', (e) => {
         if (e.button === 1 || spaceDown) {
           panning = { lastX: e.global.x, lastY: e.global.y }
+          return
         }
+        const store = usePlanStore.getState()
+        const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+        store.selectRoom(hitRoom(store.plan.rooms, world))
       })
 
       app.stage.on('pointermove', (e) => {
@@ -90,6 +98,11 @@ export function Editor2D() {
       cleanups.push(() => app.canvas.removeEventListener('pointerdown', onMiddleDown))
 
       const onKeyDown = (ev: KeyboardEvent) => {
+        if ((ev.key === 'Delete' || ev.key === 'Backspace') && !isTypingTarget(ev)) {
+          const store = usePlanStore.getState()
+          if (store.selectedRoomId) store.deleteRoom(store.selectedRoomId)
+          return
+        }
         if (ev.code === 'Space' && !isTypingTarget(ev)) {
           spaceDown = true
           ev.preventDefault()
@@ -108,8 +121,12 @@ export function Editor2D() {
       app.ticker.add(() => {
         if (!dirty) return
         dirty = false
+        const store = usePlanStore.getState()
         drawGrid(layers.grid, viewport, app.screen.width, app.screen.height)
-        drawBoundary(layers.boundary, viewport, usePlanStore.getState().plan.apartment)
+        drawBoundary(layers.boundary, viewport, store.plan.apartment)
+        drawRooms(layers.rooms, store.plan, store.selectedRoomId, viewport)
+        const selected = store.plan.rooms.find((r) => r.id === store.selectedRoomId)
+        drawHandles(layers.handles, selected ? polygonToRect(selected.polygon) : null, viewport)
       })
     })
 
