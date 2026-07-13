@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createDefaultPlan } from '../model/serialization'
 import { usePlanStore } from '../store/planStore'
@@ -67,4 +67,44 @@ it('deletes the selected room from the panel', () => {
   fireEvent.click(screen.getByText('+ Add room'))
   fireEvent.click(screen.getByText('Delete room'))
   expect(usePlanStore.getState().plan.rooms).toHaveLength(0)
+})
+
+it('disables door/window buttons until a room exists, then arms placement', () => {
+  render(<App />)
+  const doorButton = screen.getByText('+ Door')
+  expect(doorButton).toBeDisabled()
+  fireEvent.click(screen.getByText('+ Add room'))
+  expect(doorButton).toBeEnabled()
+  fireEvent.click(doorButton)
+  expect(usePlanStore.getState().placing).toBe('door')
+  fireEvent.click(doorButton) // clicking again disarms
+  expect(usePlanStore.getState().placing).toBeNull()
+})
+
+it('shows door fields when an opening is selected and clamps width via the store', () => {
+  render(<App />)
+  fireEvent.click(screen.getByText('+ Add room'))
+  const roomId = usePlanStore.getState().plan.rooms[0].id
+  act(() => {
+    usePlanStore.getState().addOpening('door', roomId, 0, 1.5)
+  })
+  expect(screen.getByRole('heading', { name: 'Door' })).toBeInTheDocument()
+  expect(screen.queryByLabelText('Sill height (m)')).toBeNull()
+  const width = screen.getByLabelText('Width (m)')
+  fireEvent.change(width, { target: { value: '0.1' } })
+  fireEvent.blur(width)
+  expect(usePlanStore.getState().plan.openings[0].width).toBe(0.3)
+})
+
+it('shows sill height for windows and deletes the opening from the panel', () => {
+  render(<App />)
+  fireEvent.click(screen.getByText('+ Add room'))
+  const roomId = usePlanStore.getState().plan.rooms[0].id
+  act(() => {
+    usePlanStore.getState().addOpening('window', roomId, 0, 1.5)
+  })
+  expect(screen.getByRole('heading', { name: 'Window' })).toBeInTheDocument()
+  expect(screen.getByLabelText('Sill height (m)')).toBeInTheDocument()
+  fireEvent.click(screen.getByText('Delete window'))
+  expect(usePlanStore.getState().plan.openings).toHaveLength(0)
 })

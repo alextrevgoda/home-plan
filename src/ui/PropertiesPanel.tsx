@@ -1,5 +1,5 @@
 import { polygonToRect } from '../model/geometry'
-import type { Apartment, Room } from '../model/types'
+import type { Apartment, Opening, Room } from '../model/types'
 import { usePlanStore } from '../store/planStore'
 import { NumberField } from './NumberField'
 
@@ -8,10 +8,18 @@ export function PropertiesPanel() {
   const selection = usePlanStore((s) => s.selection)
   const room =
     selection?.kind === 'room' ? plan.rooms.find((r) => r.id === selection.id) : undefined
+  const opening =
+    selection?.kind === 'opening' ? plan.openings.find((o) => o.id === selection.id) : undefined
 
   return (
     <aside className="panel">
-      {room ? <RoomProps room={room} /> : <ApartmentProps apartment={plan.apartment} />}
+      {opening ? (
+        <OpeningProps opening={opening} />
+      ) : room ? (
+        <RoomProps room={room} />
+      ) : (
+        <ApartmentProps apartment={plan.apartment} />
+      )}
     </aside>
   )
 }
@@ -65,6 +73,42 @@ function RoomProps({ room }: { room: Room }) {
         <input type="color" value={room.color} onChange={(e) => setRoomColor(room.id, e.target.value)} />
       </label>
       <button onClick={() => deleteRoom(room.id)}>Delete room</button>
+    </>
+  )
+}
+
+function OpeningProps({ opening }: { opening: Opening }) {
+  const updateOpening = usePlanStore((s) => s.updateOpening)
+  const deleteOpening = usePlanStore((s) => s.deleteOpening)
+
+  return (
+    <>
+      <h3>{opening.kind === 'door' ? 'Door' : 'Window'}</h3>
+      <NumberField
+        label="Width (m)"
+        value={opening.width}
+        onCommit={(v) => updateOpening(opening.id, { width: v })}
+      />
+      <NumberField
+        label="Height (m)"
+        value={opening.height}
+        onCommit={(v) => updateOpening(opening.id, { height: v })}
+      />
+      {opening.kind === 'window' && (
+        <NumberField
+          label="Sill height (m)"
+          value={opening.sillHeight}
+          onCommit={(v) => updateOpening(opening.id, { sillHeight: v })}
+        />
+      )}
+      <NumberField
+        label="Offset (m)"
+        value={opening.offset}
+        onCommit={(v) => updateOpening(opening.id, { offset: v })}
+      />
+      <button onClick={() => deleteOpening(opening.id)}>
+        Delete {opening.kind === 'door' ? 'door' : 'window'}
+      </button>
     </>
   )
 }

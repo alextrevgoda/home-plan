@@ -18,6 +18,9 @@ export function Toolbar() {
   const mode = usePlanStore((s) => s.mode)
   const setMode = usePlanStore((s) => s.setMode)
   const addRoom = usePlanStore((s) => s.addRoom)
+  const placing = usePlanStore((s) => s.placing)
+  const setPlacing = usePlanStore((s) => s.setPlacing)
+  const hasRooms = usePlanStore((s) => s.plan.rooms.length > 0)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const onImportFile = async (file: File) => {
@@ -38,6 +41,20 @@ export function Toolbar() {
         </button>
       </div>
       <button onClick={() => addRoom()}>+ Add room</button>
+      <button
+        className={placing === 'door' ? 'active' : ''}
+        disabled={!hasRooms}
+        onClick={() => setPlacing(placing === 'door' ? null : 'door')}
+      >
+        + Door
+      </button>
+      <button
+        className={placing === 'window' ? 'active' : ''}
+        disabled={!hasRooms}
+        onClick={() => setPlacing(placing === 'window' ? null : 'window')}
+      >
+        + Window
+      </button>
       <button onClick={exportPlan}>Export</button>
       <button onClick={() => fileRef.current?.click()}>Import</button>
       <input
