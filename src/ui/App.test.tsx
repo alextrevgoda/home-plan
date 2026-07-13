@@ -4,9 +4,13 @@ import { createDefaultPlan } from '../model/serialization'
 import { usePlanStore } from '../store/planStore'
 import App from './App'
 
-// jsdom cannot init WebGL, so Editor2D is mocked in App tests.
+// jsdom cannot init WebGL, so Editor2D and Viewer3D are mocked in App tests.
 vi.mock('../editor2d/Editor2D', () => ({
   Editor2D: () => <div data-testid="canvas-2d" />,
+}))
+
+vi.mock('../viewer3d/Viewer3D', () => ({
+  Viewer3D: () => <div data-testid="canvas-3d" />,
 }))
 
 beforeEach(() => {
