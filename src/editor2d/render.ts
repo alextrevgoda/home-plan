@@ -1,5 +1,6 @@
 import { Container, Graphics, Text } from 'pixi.js'
 import { polygonToRect, rectInBounds, rectsOverlap } from '../model/geometry'
+import type { SnapGuide } from '../model/snapping'
 import type { Apartment, Plan, Rect } from '../model/types'
 import { handlePositions } from './interactions'
 import { screenToWorld, worldToScreen, type Viewport } from './viewport'
@@ -90,4 +91,25 @@ export function drawHandles(g: Graphics, rect: Rect | null, viewport: Viewport) 
     const s = worldToScreen(viewport, pos)
     g.rect(s.x - 4, s.y - 4, 8, 8).fill({ color: 0xffffff }).stroke({ width: 1.5, color: 0x1d4ed8 })
   }
+}
+
+export function drawGuides(
+  g: Graphics,
+  guides: SnapGuide[],
+  viewport: Viewport,
+  screenW: number,
+  screenH: number,
+) {
+  g.clear()
+  if (guides.length === 0) return
+  for (const guide of guides) {
+    if (guide.axis === 'x') {
+      const sx = worldToScreen(viewport, { x: guide.position, y: 0 }).x
+      g.moveTo(sx, 0).lineTo(sx, screenH)
+    } else {
+      const sy = worldToScreen(viewport, { x: 0, y: guide.position }).y
+      g.moveTo(0, sy).lineTo(screenW, sy)
+    }
+  }
+  g.stroke({ width: 1.5, color: 0xd946ef })
 }

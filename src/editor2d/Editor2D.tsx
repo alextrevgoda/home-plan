@@ -1,9 +1,11 @@
 import { Application, Container, Graphics } from 'pixi.js'
 import { useEffect, useRef } from 'react'
 import { polygonToRect } from '../model/geometry'
+import { collectSnapLines, snapMove, type SnapGuide, type SnapOptions } from '../model/snapping'
+import type { Rect, Vec2 } from '../model/types'
 import { usePlanStore } from '../store/planStore'
 import { hitRoom } from './interactions'
-import { drawBoundary, drawGrid, drawHandles, drawRooms } from './render'
+import { drawBoundary, drawGrid, drawGuides, drawHandles, drawRooms } from './render'
 import { fitApartment, screenToWorld, zoomAt, type Viewport } from './viewport'
 
 function isTypingTarget(ev: KeyboardEvent) {
@@ -31,9 +33,10 @@ export function Editor2D() {
         grid: new Graphics(),
         boundary: new Graphics(),
         rooms: new Container(),
+        guides: new Graphics(),
         handles: new Graphics(),
       }
-      app.stage.addChild(layers.grid, layers.boundary, layers.rooms, layers.handles)
+      app.stage.addChild(layers.grid, layers.boundary, layers.rooms, layers.guides, layers.handles)
 
       let viewport: Viewport = fitApartment(
         app.screen.width,
@@ -51,6 +54,24 @@ export function Editor2D() {
       let panning: { lastX: number; lastY: number } | null = null
       let spaceDown = false
 
+      type DragState = { kind: 'idle' } | { kind: 'move'; roomId: string; grabOffset: Vec2 }
+      let drag: DragState = { kind: 'idle' }
+      let guides: SnapGuide[] = []
+      let altDown = false
+
+      const snapOpts = (): SnapOptions => ({
+        gridStep: 0.1,
+        gridThreshold: 10 / viewport.scale,
+        edgeThreshold: 10 / viewport.scale,
+      })
+
+      const otherRects = (excludeId: string): Rect[] =>
+        usePlanStore
+          .getState()
+          .plan.rooms.filter((r) => r.id !== excludeId)
+          .map((r) => polygonToRect(r.polygon))
+          .filter((r): r is Rect => r !== null)
+
       app.stage.eventMode = 'static'
       app.stage.hitArea = app.screen
 
@@ -61,25 +82,58 @@ export function Editor2D() {
         }
         const store = usePlanStore.getState()
         const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
-        store.selectRoom(hitRoom(store.plan.rooms, world))
+        const roomId = hitRoom(store.plan.rooms, world)
+        store.selectRoom(roomId)
+        if (roomId) {
+          const rect = polygonToRect(store.plan.rooms.find((r) => r.id === roomId)!.polygon)
+          if (rect) drag = { kind: 'move', roomId, grabOffset: { x: world.x - rect.x, y: world.y - rect.y } }
+        }
       })
 
       app.stage.on('pointermove', (e) => {
-        if (!panning) return
-        viewport = {
-          ...viewport,
-          offsetX: viewport.offsetX + e.global.x - panning.lastX,
-          offsetY: viewport.offsetY + e.global.y - panning.lastY,
+        if (panning) {
+          viewport = {
+            ...viewport,
+            offsetX: viewport.offsetX + e.global.x - panning.lastX,
+            offsetY: viewport.offsetY + e.global.y - panning.lastY,
+          }
+          panning = { lastX: e.global.x, lastY: e.global.y }
+          markDirty()
+          return
         }
-        panning = { lastX: e.global.x, lastY: e.global.y }
+        if (drag.kind !== 'move') return
+        const activeDrag = drag
+
+        const store = usePlanStore.getState()
+        const room = store.plan.rooms.find((r) => r.id === activeDrag.roomId)
+        const rect = room ? polygonToRect(room.polygon) : null
+        if (!rect) return
+
+        const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+        const raw: Rect = { ...rect, x: world.x - activeDrag.grabOffset.x, y: world.y - activeDrag.grabOffset.y }
+
+        if (altDown) {
+          guides = []
+          store.updateRoomRect(drag.roomId, raw)
+        } else {
+          const lines = collectSnapLines(otherRects(drag.roomId), store.plan.apartment)
+          const snapped = snapMove(raw, lines, snapOpts())
+          guides = snapped.guides
+          store.updateRoomRect(drag.roomId, { ...raw, x: snapped.x, y: snapped.y })
+        }
         markDirty()
       })
 
-      const endPan = () => {
+      const endInteraction = () => {
         panning = null
+        if (drag.kind !== 'idle' || guides.length > 0) {
+          drag = { kind: 'idle' }
+          guides = []
+          markDirty()
+        }
       }
-      app.stage.on('pointerup', endPan)
-      app.stage.on('pointerupoutside', endPan)
+      app.stage.on('pointerup', endInteraction)
+      app.stage.on('pointerupoutside', endInteraction)
 
       const onWheel = (ev: WheelEvent) => {
         ev.preventDefault()
@@ -98,6 +152,7 @@ export function Editor2D() {
       cleanups.push(() => app.canvas.removeEventListener('pointerdown', onMiddleDown))
 
       const onKeyDown = (ev: KeyboardEvent) => {
+        altDown = ev.altKey
         if ((ev.key === 'Delete' || ev.key === 'Backspace') && !isTypingTarget(ev)) {
           const store = usePlanStore.getState()
           if (store.selectedRoomId) store.deleteRoom(store.selectedRoomId)
@@ -109,6 +164,7 @@ export function Editor2D() {
         }
       }
       const onKeyUp = (ev: KeyboardEvent) => {
+        altDown = ev.altKey
         if (ev.code === 'Space') spaceDown = false
       }
       window.addEventListener('keydown', onKeyDown)
@@ -125,6 +181,7 @@ export function Editor2D() {
         drawGrid(layers.grid, viewport, app.screen.width, app.screen.height)
         drawBoundary(layers.boundary, viewport, store.plan.apartment)
         drawRooms(layers.rooms, store.plan, store.selectedRoomId, viewport)
+        drawGuides(layers.guides, guides, viewport, app.screen.width, app.screen.height)
         const selected = store.plan.rooms.find((r) => r.id === store.selectedRoomId)
         drawHandles(layers.handles, selected ? polygonToRect(selected.polygon) : null, viewport)
       })
