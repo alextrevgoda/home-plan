@@ -4,7 +4,7 @@ import { createDefaultPlan } from '../model/serialization'
 import { usePlanStore } from './planStore'
 
 beforeEach(() => {
-  usePlanStore.setState({ plan: createDefaultPlan(), selectedRoomId: null, mode: '2d' })
+  usePlanStore.setState({ plan: createDefaultPlan(), selection: null, mode: '2d' })
 })
 
 describe('addRoom', () => {
@@ -12,7 +12,7 @@ describe('addRoom', () => {
     const id = usePlanStore.getState().addRoom()
     const s = usePlanStore.getState()
     expect(s.plan.rooms).toHaveLength(1)
-    expect(s.selectedRoomId).toBe(id)
+    expect(s.selection).toEqual({ kind: 'room', id })
     expect(s.plan.rooms[0].name).toBe('Room 1')
     const rect = polygonToRect(s.plan.rooms[0].polygon)
     expect(rect).toEqual({ x: 3.5, y: 2.5, width: 3, height: 3 })
@@ -70,7 +70,7 @@ describe('deleteRoom', () => {
     usePlanStore.getState().deleteRoom(id)
     const s = usePlanStore.getState()
     expect(s.plan.rooms).toHaveLength(0)
-    expect(s.selectedRoomId).toBeNull()
+    expect(s.selection).toBeNull()
   })
 })
 
@@ -81,11 +81,16 @@ describe('loadPlan / setMode / selectRoom', () => {
     usePlanStore.getState().loadPlan(fresh)
     const s = usePlanStore.getState()
     expect(s.plan).toEqual(fresh)
-    expect(s.selectedRoomId).toBeNull()
+    expect(s.selection).toBeNull()
   })
 
   it('switches mode', () => {
     usePlanStore.getState().setMode('3d')
     expect(usePlanStore.getState().mode).toBe('3d')
+  })
+
+  it('selectOpening sets an opening selection', () => {
+    usePlanStore.getState().selectOpening('o1')
+    expect(usePlanStore.getState().selection).toEqual({ kind: 'opening', id: 'o1' })
   })
 })

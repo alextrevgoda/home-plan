@@ -5,8 +5,9 @@ import { NumberField } from './NumberField'
 
 export function PropertiesPanel() {
   const plan = usePlanStore((s) => s.plan)
-  const selectedRoomId = usePlanStore((s) => s.selectedRoomId)
-  const room = plan.rooms.find((r) => r.id === selectedRoomId)
+  const selection = usePlanStore((s) => s.selection)
+  const room =
+    selection?.kind === 'room' ? plan.rooms.find((r) => r.id === selection.id) : undefined
 
   return (
     <aside className="panel">

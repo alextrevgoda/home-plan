@@ -15,7 +15,7 @@ vi.mock('../viewer3d/Viewer3D', () => ({
 }))
 
 beforeEach(() => {
-  usePlanStore.setState({ plan: createDefaultPlan(), selectedRoomId: null, mode: '2d' })
+  usePlanStore.setState({ plan: createDefaultPlan(), selection: null, mode: '2d' })
 })
 
 // @testing-library/react's auto-cleanup relies on a global `afterEach`, which

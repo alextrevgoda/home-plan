@@ -18,7 +18,7 @@ function memoryStorage(): Storage {
 }
 
 beforeEach(() => {
-  usePlanStore.setState({ plan: createDefaultPlan(), selectedRoomId: null, mode: '2d' })
+  usePlanStore.setState({ plan: createDefaultPlan(), selection: null, mode: '2d' })
 })
 
 afterEach(() => {

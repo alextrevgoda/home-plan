@@ -86,14 +86,14 @@ export function Editor2D() {
         }
         const store = usePlanStore.getState()
 
-        const selected = store.selectedRoomId
-          ? store.plan.rooms.find((r) => r.id === store.selectedRoomId)
-          : undefined
-        const selectedRect = selected ? polygonToRect(selected.polygon) : null
-        if (selected && selectedRect) {
+        const sel = store.selection
+        const selectedRoom =
+          sel?.kind === 'room' ? store.plan.rooms.find((r) => r.id === sel.id) : undefined
+        const selectedRect = selectedRoom ? polygonToRect(selectedRoom.polygon) : null
+        if (selectedRoom && selectedRect) {
           const handle = hitHandle(selectedRect, viewport, { x: e.global.x, y: e.global.y })
           if (handle) {
-            drag = { kind: 'resize', roomId: selected.id, handle }
+            drag = { kind: 'resize', roomId: selectedRoom.id, handle }
             return
           }
         }
@@ -204,7 +204,7 @@ export function Editor2D() {
         altDown = ev.altKey
         if ((ev.key === 'Delete' || ev.key === 'Backspace') && !isTypingTarget(ev)) {
           const store = usePlanStore.getState()
-          if (store.selectedRoomId) store.deleteRoom(store.selectedRoomId)
+          if (store.selection?.kind === 'room') store.deleteRoom(store.selection.id)
           return
         }
         if (ev.code === 'Space' && !isTypingTarget(ev)) {
@@ -229,10 +229,14 @@ export function Editor2D() {
         const store = usePlanStore.getState()
         drawGrid(layers.grid, viewport, app.screen.width, app.screen.height)
         drawBoundary(layers.boundary, viewport, store.plan.apartment)
-        drawRooms(layers.rooms, store.plan, store.selectedRoomId, viewport)
+        const sel = store.selection
+        const selectedId = sel?.kind === 'room' ? sel.id : null
+        drawRooms(layers.rooms, store.plan, selectedId, viewport)
         drawGuides(layers.guides, guides, viewport, app.screen.width, app.screen.height)
-        const selected = store.plan.rooms.find((r) => r.id === store.selectedRoomId)
-        drawHandles(layers.handles, selected ? polygonToRect(selected.polygon) : null, viewport)
+        const selectedRoom = selectedId
+          ? store.plan.rooms.find((r) => r.id === selectedId)
+          : undefined
+        drawHandles(layers.handles, selectedRoom ? polygonToRect(selectedRoom.polygon) : null, viewport)
       })
     })
     .catch(() => {

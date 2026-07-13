@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { MIN_ROOM_SIZE, polygonArea, rectToPolygon, roundCm } from '../model/geometry'
 import { createDefaultPlan } from '../model/serialization'
-import type { Apartment, Mode, Plan, Rect } from '../model/types'
+import type { Apartment, Mode, Plan, Rect, Selection } from '../model/types'
 
 const ROOM_COLORS = ['#8ecae6', '#ffb703', '#90be6d', '#f4a7b9', '#bdb2ff', '#f9c74f']
 
@@ -9,10 +9,11 @@ const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(mi
 
 export interface PlanState {
   plan: Plan
-  selectedRoomId: string | null
+  selection: Selection | null
   mode: Mode
   setMode: (mode: Mode) => void
   selectRoom: (id: string | null) => void
+  selectOpening: (id: string) => void
   setApartment: (patch: Partial<Apartment>) => void
   addRoom: () => string
   updateRoomRect: (id: string, rect: Rect) => void
@@ -24,12 +25,14 @@ export interface PlanState {
 
 export const usePlanStore = create<PlanState>((set) => ({
   plan: createDefaultPlan(),
-  selectedRoomId: null,
+  selection: null,
   mode: '2d',
 
   setMode: (mode) => set({ mode }),
 
-  selectRoom: (selectedRoomId) => set({ selectedRoomId }),
+  selectRoom: (id) => set({ selection: id ? { kind: 'room', id } : null }),
+
+  selectOpening: (id) => set({ selection: { kind: 'opening', id } }),
 
   setApartment: (patch) =>
     set((s) => {
@@ -61,7 +64,7 @@ export const usePlanStore = create<PlanState>((set) => ({
         polygon: rectToPolygon(rect),
         color: ROOM_COLORS[s.plan.rooms.length % ROOM_COLORS.length],
       }
-      return { plan: { ...s.plan, rooms: [...s.plan.rooms, room] }, selectedRoomId: id }
+      return { plan: { ...s.plan, rooms: [...s.plan.rooms, room] }, selection: { kind: 'room', id } }
     })
     return id
   },
@@ -100,8 +103,8 @@ export const usePlanStore = create<PlanState>((set) => ({
   deleteRoom: (id) =>
     set((s) => ({
       plan: { ...s.plan, rooms: s.plan.rooms.filter((r) => r.id !== id) },
-      selectedRoomId: s.selectedRoomId === id ? null : s.selectedRoomId,
+      selection: s.selection?.kind === 'room' && s.selection.id === id ? null : s.selection,
     })),
 
-  loadPlan: (plan) => set({ plan, selectedRoomId: null }),
+  loadPlan: (plan) => set({ plan, selection: null }),
 }))
