@@ -1,10 +1,10 @@
 import { Application, Container, Graphics } from 'pixi.js'
 import { useEffect, useRef } from 'react'
 import { polygonToRect } from '../model/geometry'
-import { collectSnapLines, snapMove, type SnapGuide, type SnapOptions } from '../model/snapping'
+import { collectSnapLines, snapMove, snapScalar, type SnapGuide, type SnapOptions } from '../model/snapping'
 import type { Rect, Vec2 } from '../model/types'
 import { usePlanStore } from '../store/planStore'
-import { hitRoom } from './interactions'
+import { applyResize, hitHandle, hitRoom, type HandleId } from './interactions'
 import { drawBoundary, drawGrid, drawGuides, drawHandles, drawRooms } from './render'
 import { fitApartment, screenToWorld, zoomAt, type Viewport } from './viewport'
 
@@ -54,7 +54,10 @@ export function Editor2D() {
       let panning: { lastX: number; lastY: number } | null = null
       let spaceDown = false
 
-      type DragState = { kind: 'idle' } | { kind: 'move'; roomId: string; grabOffset: Vec2 }
+      type DragState =
+        | { kind: 'idle' }
+        | { kind: 'move'; roomId: string; grabOffset: Vec2 }
+        | { kind: 'resize'; roomId: string; handle: HandleId }
       let drag: DragState = { kind: 'idle' }
       let guides: SnapGuide[] = []
       let altDown = false
@@ -81,6 +84,19 @@ export function Editor2D() {
           return
         }
         const store = usePlanStore.getState()
+
+        const selected = store.selectedRoomId
+          ? store.plan.rooms.find((r) => r.id === store.selectedRoomId)
+          : undefined
+        const selectedRect = selected ? polygonToRect(selected.polygon) : null
+        if (selected && selectedRect) {
+          const handle = hitHandle(selectedRect, viewport, { x: e.global.x, y: e.global.y })
+          if (handle) {
+            drag = { kind: 'resize', roomId: selected.id, handle }
+            return
+          }
+        }
+
         const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
         const roomId = hitRoom(store.plan.rooms, world)
         store.selectRoom(roomId)
@@ -101,27 +117,59 @@ export function Editor2D() {
           markDirty()
           return
         }
-        if (drag.kind !== 'move') return
-        const activeDrag = drag
+        if (drag.kind === 'idle') return
 
-        const store = usePlanStore.getState()
-        const room = store.plan.rooms.find((r) => r.id === activeDrag.roomId)
-        const rect = room ? polygonToRect(room.polygon) : null
-        if (!rect) return
+        if (drag.kind === 'move') {
+          const activeDrag = drag
 
-        const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
-        const raw: Rect = { ...rect, x: world.x - activeDrag.grabOffset.x, y: world.y - activeDrag.grabOffset.y }
+          const store = usePlanStore.getState()
+          const room = store.plan.rooms.find((r) => r.id === activeDrag.roomId)
+          const rect = room ? polygonToRect(room.polygon) : null
+          if (!rect) return
 
-        if (altDown) {
-          guides = []
-          store.updateRoomRect(drag.roomId, raw)
-        } else {
-          const lines = collectSnapLines(otherRects(drag.roomId), store.plan.apartment)
-          const snapped = snapMove(raw, lines, snapOpts())
-          guides = snapped.guides
-          store.updateRoomRect(drag.roomId, { ...raw, x: snapped.x, y: snapped.y })
+          const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+          const raw: Rect = { ...rect, x: world.x - activeDrag.grabOffset.x, y: world.y - activeDrag.grabOffset.y }
+
+          if (altDown) {
+            guides = []
+            store.updateRoomRect(activeDrag.roomId, raw)
+          } else {
+            const lines = collectSnapLines(otherRects(activeDrag.roomId), store.plan.apartment)
+            const snapped = snapMove(raw, lines, snapOpts())
+            guides = snapped.guides
+            store.updateRoomRect(activeDrag.roomId, { ...raw, x: snapped.x, y: snapped.y })
+          }
+          markDirty()
         }
-        markDirty()
+
+        if (drag.kind === 'resize') {
+          const activeDrag = drag
+          const store = usePlanStore.getState()
+          const room = store.plan.rooms.find((r) => r.id === activeDrag.roomId)
+          const rect = room ? polygonToRect(room.polygon) : null
+          if (!rect) return
+
+          let point = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+          guides = []
+
+          if (!altDown) {
+            const lines = collectSnapLines(otherRects(activeDrag.roomId), store.plan.apartment)
+            const opts = snapOpts()
+            if (activeDrag.handle.includes('e') || activeDrag.handle.includes('w')) {
+              const sx = snapScalar(point.x, lines.xs, opts)
+              point = { ...point, x: sx.value }
+              if (sx.guide !== null) guides.push({ axis: 'x', position: sx.guide })
+            }
+            if (activeDrag.handle.includes('n') || activeDrag.handle.includes('s')) {
+              const sy = snapScalar(point.y, lines.ys, opts)
+              point = { ...point, y: sy.value }
+              if (sy.guide !== null) guides.push({ axis: 'y', position: sy.guide })
+            }
+          }
+
+          store.updateRoomRect(activeDrag.roomId, applyResize(rect, activeDrag.handle, point))
+          markDirty()
+        }
       })
 
       const endInteraction = () => {
