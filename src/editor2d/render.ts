@@ -1,8 +1,10 @@
 import { Container, Graphics, Text } from 'pixi.js'
 import { polygonToRect, rectInBounds, rectsOverlap } from '../model/geometry'
+import { openingSpan, openingWarnings, roomEdge } from '../model/openings'
 import type { SnapGuide } from '../model/snapping'
-import type { Apartment, Plan, Rect } from '../model/types'
+import type { Apartment, Plan, Rect, Selection } from '../model/types'
 import { handlePositions } from './interactions'
+import type { EdgeHit } from './interactions'
 import { screenToWorld, worldToScreen, type Viewport } from './viewport'
 
 const isMajor = (v: number) => Math.abs(v - Math.round(v)) < 1e-6
@@ -112,4 +114,63 @@ export function drawGuides(
     }
   }
   g.stroke({ width: 1.5, color: 0xd946ef })
+}
+
+const GAP_COLOR = 0xf7f8fa // canvas background — paints the wall gap
+const OPENING_COLOR = 0x475069
+const OPENING_SELECTED = 0x1d4ed8
+const OPENING_WARNING = 0xe07a5f
+
+export function drawOpenings(g: Graphics, plan: Plan, selection: Selection | null, viewport: Viewport) {
+  g.clear()
+  const warnings = openingWarnings(plan)
+  for (const opening of plan.openings) {
+    const room = plan.rooms.find((r) => r.id === opening.roomId)
+    if (!room) continue
+    const span = openingSpan(opening, room)
+    if (!span) continue
+    const a = worldToScreen(viewport, span.a)
+    const b = worldToScreen(viewport, span.b)
+
+    // 1. gap: paint over the wall line
+    g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 7, color: GAP_COLOR })
+
+    const selected = selection?.kind === 'opening' && selection.id === opening.id
+    const color = selected ? OPENING_SELECTED : warnings.has(opening.id) ? OPENING_WARNING : OPENING_COLOR
+
+    // unit perpendicular in screen space
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const len = Math.hypot(dx, dy) || 1
+    const px = -dy / len
+    const py = dx / len
+
+    // 2. jamb ticks at both ends
+    const tick = 6
+    g.moveTo(a.x - px * tick, a.y - py * tick).lineTo(a.x + px * tick, a.y + py * tick)
+    g.moveTo(b.x - px * tick, b.y - py * tick).lineTo(b.x + px * tick, b.y + py * tick)
+
+    // 3. symbol
+    if (opening.kind === 'door') {
+      // door leaf: single thin line across the gap
+      g.moveTo(a.x, a.y).lineTo(b.x, b.y)
+    } else {
+      // window: double parallel lines
+      const off = 2
+      g.moveTo(a.x + px * off, a.y + py * off).lineTo(b.x + px * off, b.y + py * off)
+      g.moveTo(a.x - px * off, a.y - py * off).lineTo(b.x - px * off, b.y - py * off)
+    }
+    g.stroke({ width: selected ? 2.5 : 1.5, color })
+  }
+}
+
+export function drawEdgeHighlight(g: Graphics, hit: EdgeHit | null, plan: Plan, viewport: Viewport) {
+  g.clear()
+  if (!hit) return
+  const room = plan.rooms.find((r) => r.id === hit.roomId)
+  const edge = room ? roomEdge(room, hit.edgeIndex) : null
+  if (!edge) return
+  const a = worldToScreen(viewport, edge.a)
+  const b = worldToScreen(viewport, edge.b)
+  g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 5, color: 0x22c55e, alpha: 0.6 })
 }
