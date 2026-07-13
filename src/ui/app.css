@@ -1,2 +1,31 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+
+.app { display: flex; flex-direction: column; height: 100%; }
+.toolbar {
+  display: flex; gap: 12px; align-items: center;
+  padding: 8px 12px; border-bottom: 1px solid #dde1e6;
+}
+.toolbar button {
+  padding: 6px 12px; border: 1px solid #c7ccd4; border-radius: 6px;
+  background: #fff; cursor: pointer;
+}
+.mode-toggle { display: flex; gap: 0; }
+.mode-toggle button { border-radius: 0; }
+.mode-toggle button:first-child { border-radius: 6px 0 0 6px; }
+.mode-toggle button:last-child { border-radius: 0 6px 6px 0; }
+.mode-toggle button.active { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+
+.main { display: flex; flex: 1; min-height: 0; }
+.canvas-area { flex: 1; position: relative; min-width: 0; }
+.panel { width: 260px; border-left: 1px solid #dde1e6; padding: 12px; overflow-y: auto; }
+.panel h3 { margin-top: 0; }
+.panel button { padding: 6px 12px; border: 1px solid #c7ccd4; border-radius: 6px; background: #fff; cursor: pointer; }
+
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: 13px; }
+.field input { padding: 6px 8px; border: 1px solid #c7ccd4; border-radius: 6px; font-size: 13px; }
+
+.toast {
+  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  background: #1f2430; color: #fff; padding: 10px 16px; border-radius: 8px; z-index: 10;
+}
