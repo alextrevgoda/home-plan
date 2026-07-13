@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { rectToPolygon } from './geometry'
-import { createDefaultPlan, parsePlan, serializePlan } from './serialization'
+import { createDefaultPlan, parsePlan, planSchema, serializePlan } from './serialization'
 
 describe('createDefaultPlan', () => {
   it('creates a valid empty v2 plan with spec defaults', () => {
@@ -130,5 +130,24 @@ describe('serializePlan / parsePlan', () => {
       sillHeight: 0.9,
     })
     expect(parsePlan(JSON.stringify(plan))).toBeNull()
+  })
+
+  it('rejects non-finite opening dimensions', () => {
+    const base = createDefaultPlan()
+    base.rooms.push({
+      id: 'r1',
+      name: 'Room',
+      polygon: rectToPolygon({ x: 0, y: 0, width: 3, height: 3 }),
+      color: '#8ecae6',
+    })
+    for (const patch of [{ width: Infinity }, { height: Infinity }, { sillHeight: Infinity }]) {
+      const plan = {
+        ...base,
+        openings: [
+          { id: 'o1', kind: 'window', roomId: 'r1', edgeIndex: 0, offset: 1, width: 1.2, height: 1.2, sillHeight: 0.9, ...patch },
+        ],
+      }
+      expect(planSchema.safeParse(plan).success).toBe(false)
+    }
   })
 })

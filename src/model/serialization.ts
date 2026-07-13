@@ -10,9 +10,9 @@ const openingSchema = z.object({
   roomId: z.string().min(1),
   edgeIndex: z.number().int().min(0),
   offset: z.number().finite().min(0),
-  width: z.number().min(0.3),
-  height: z.number().positive(),
-  sillHeight: z.number().min(0),
+  width: z.number().finite().min(0.3),
+  height: z.number().finite().positive(),
+  sillHeight: z.number().finite().min(0),
 })
 
 export const planSchema = z
