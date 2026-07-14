@@ -226,8 +226,8 @@ describe('furniture actions', () => {
     st().resizeFurniture(id, { width: 99 })
     expect(st().plan.furniture[0].size.width).toBe(2.8)
     st().recolorFurniture(id, '#ff0000')
-    // sofa has no recolorMaterial until Task 11 → color must NOT be set
-    expect(st().plan.furniture[0].color).toBeUndefined()
+    // sofa-3seat has a recolorMaterial (Task 11) → color is set
+    expect(st().plan.furniture[0].color).toBe('#ff0000')
     st().deleteFurniture(id)
     expect(st().plan.furniture).toHaveLength(0)
     expect(st().selection).toBeNull()
