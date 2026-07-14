@@ -40,3 +40,16 @@ export function fitApartment(
     offsetY: (canvasHeight - apartment.depth * scale) / 2,
   }
 }
+
+export interface CanvasSize {
+  width: number
+  height: number
+}
+
+export function recenterViewport(v: Viewport, oldSize: CanvasSize, newSize: CanvasSize): Viewport {
+  return {
+    ...v,
+    offsetX: v.offsetX + (newSize.width - oldSize.width) / 2,
+    offsetY: v.offsetY + (newSize.height - oldSize.height) / 2,
+  }
+}

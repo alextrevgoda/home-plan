@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fitApartment, screenToWorld, worldToScreen, zoomAt } from './viewport'
+import { fitApartment, recenterViewport, screenToWorld, worldToScreen, zoomAt, type Viewport } from './viewport'
 
 describe('worldToScreen / screenToWorld', () => {
   it('round-trips a point', () => {
@@ -38,5 +38,22 @@ describe('fitApartment', () => {
     expect(v.scale).toBe(85)
     expect(v.offsetX).toBe(75)
     expect(v.offsetY).toBe(60)
+  })
+})
+
+describe('recenterViewport', () => {
+  it('keeps the world point at the old canvas center at the new canvas center', () => {
+    const v: Viewport = { offsetX: 40, offsetY: -10, scale: 50 }
+    const next = recenterViewport(v, { width: 800, height: 600 }, { width: 390, height: 700 })
+    const before = screenToWorld(v, { x: 400, y: 300 })
+    const after = screenToWorld(next, { x: 195, y: 350 })
+    expect(after.x).toBeCloseTo(before.x)
+    expect(after.y).toBeCloseTo(before.y)
+    expect(next.scale).toBe(v.scale)
+  })
+
+  it('is identity when the size does not change', () => {
+    const v: Viewport = { offsetX: 12, offsetY: 34, scale: 80 }
+    expect(recenterViewport(v, { width: 500, height: 400 }, { width: 500, height: 400 })).toEqual(v)
   })
 })
