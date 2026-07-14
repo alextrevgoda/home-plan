@@ -23,6 +23,8 @@ export function Toolbar() {
   const hasRooms = usePlanStore((s) => s.plan.rooms.length > 0)
   const catalogOpen = usePlanStore((s) => s.catalogOpen)
   const setCatalogOpen = usePlanStore((s) => s.setCatalogOpen)
+  const apartmentPropsOpen = usePlanStore((s) => s.apartmentPropsOpen)
+  const setApartmentPropsOpen = usePlanStore((s) => s.setApartmentPropsOpen)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const onImportFile = async (file: File) => {
@@ -63,6 +65,12 @@ export function Toolbar() {
         onClick={() => setCatalogOpen(!catalogOpen)}
       >
         Furniture
+      </button>
+      <button
+        className={apartmentPropsOpen ? 'mobile-only active' : 'mobile-only'}
+        onClick={() => setApartmentPropsOpen(!apartmentPropsOpen)}
+      >
+        Apartment
       </button>
       <button onClick={exportPlan}>Export</button>
       <button onClick={() => fileRef.current?.click()}>Import</button>
