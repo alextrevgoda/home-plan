@@ -25,27 +25,47 @@ export function loadFromStorage(storage: Storage): LoadResult {
   return { plan: createDefaultPlan(), recovered: true }
 }
 
-export function startAutosave(storage: Storage, debounceMs = 500, onError?: () => void): () => void {
+export interface UnloadTarget {
+  addEventListener(type: 'beforeunload', listener: () => void): void
+  removeEventListener(type: 'beforeunload', listener: () => void): void
+}
+
+export function startAutosave(
+  storage: Storage,
+  debounceMs = 500,
+  onError?: () => void,
+  unloadTarget: UnloadTarget | undefined = typeof window !== 'undefined' ? window : undefined,
+): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined
   let didReportError = false
+
+  const save = () => {
+    try {
+      storage.setItem(STORAGE_KEY, serializePlan(usePlanStore.getState().plan))
+    } catch {
+      if (!didReportError) {
+        didReportError = true
+        onError?.()
+      }
+    }
+  }
 
   const unsubscribe = usePlanStore.subscribe((state, prev) => {
     if (state.plan === prev.plan) return
     clearTimeout(timer)
-    timer = setTimeout(() => {
-      try {
-        storage.setItem(STORAGE_KEY, serializePlan(usePlanStore.getState().plan))
-      } catch {
-        if (!didReportError) {
-          didReportError = true
-          onError?.()
-        }
-      }
-    }, debounceMs)
+    timer = setTimeout(save, debounceMs)
   })
+
+  const flush = () => {
+    clearTimeout(timer)
+    timer = undefined
+    save()
+  }
+  unloadTarget?.addEventListener('beforeunload', flush)
 
   return () => {
     clearTimeout(timer)
+    unloadTarget?.removeEventListener('beforeunload', flush)
     unsubscribe()
   }
 }
