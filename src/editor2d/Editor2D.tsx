@@ -1,24 +1,25 @@
 import { Application, Container, Graphics, type FederatedPointerEvent } from 'pixi.js'
 import { useEffect, useRef } from 'react'
 import { catalogItem } from '../model/catalog'
-import { roundCm, polygonToRect } from '../model/geometry'
+import { roundCm } from '../model/geometry'
 import { floorItemCollides, floorItemInBounds, isSolidFloorItem, snapFloorItemToWall } from '../model/furniture'
 import { projectOntoEdge, roomEdge } from '../model/openings'
+import { polygonBounds } from '../model/polygon'
 import { collectSnapLines, snapMove, snapScalar, type SnapGuide, type SnapOptions } from '../model/snapping'
 import type { Rect, Room, Vec2 } from '../model/types'
 import { usePlanStore } from '../store/planStore'
 import { useToast } from '../ui/toast'
 import {
-  applyResize,
+  edgeIsHorizontal,
   hitFurniture,
-  hitHandle,
   hitOpening,
+  hitPolygonHandle,
   hitRoom,
   hitRotationHandle,
   nearestEdge,
+  nearestRoomEdge,
   rotationFromPointer,
   type EdgeHit,
-  type HandleId,
 } from './interactions'
 import {
   drawBoundary,
@@ -27,8 +28,8 @@ import {
   drawFurnitureGhost,
   drawGrid,
   drawGuides,
-  drawHandles,
   drawOpenings,
+  drawPolygonHandles,
   drawRooms,
   drawRotationHandle,
   type FurnitureGhost,
@@ -114,7 +115,8 @@ export function Editor2D() {
       type DragState =
         | { kind: 'idle' }
         | { kind: 'move'; roomId: string; grabOffset: Vec2 }
-        | { kind: 'resize'; roomId: string; handle: HandleId }
+        | { kind: 'pushEdge'; roomId: string; edgeIndex: number; horizontal: boolean }
+        | { kind: 'moveVertex'; roomId: string; vertexIndex: number }
         | { kind: 'moveOpening'; openingId: string }
         | { kind: 'moveFloorItem'; itemId: string; grabOffset: Vec2; start: { position: Vec2; rotation: number } }
         | { kind: 'moveWallItem'; itemId: string }
@@ -241,19 +243,26 @@ export function Editor2D() {
         const sel = store.selection
         const selectedRoom =
           sel?.kind === 'room' ? store.plan.rooms.find((r) => r.id === sel.id) : undefined
-        const selectedRect = selectedRoom ? polygonToRect(selectedRoom.polygon) : null
-        if (selectedRoom && selectedRect) {
-          const handle = hitHandle(selectedRect, viewport, screen)
+        if (selectedRoom) {
+          const handle = hitPolygonHandle(selectedRoom, viewport, screen)
           if (handle) {
-            drag = { kind: 'resize', roomId: selectedRoom.id, handle }
+            drag =
+              handle.kind === 'edge'
+                ? {
+                    kind: 'pushEdge',
+                    roomId: selectedRoom.id,
+                    edgeIndex: handle.index,
+                    horizontal: edgeIsHorizontal(selectedRoom.polygon, handle.index),
+                  }
+                : { kind: 'moveVertex', roomId: selectedRoom.id, vertexIndex: handle.index }
             return
           }
         }
         const roomId = hitRoom(store.plan.rooms, world)
         store.selectRoom(roomId)
         if (roomId) {
-          const rect = polygonToRect(store.plan.rooms.find((r) => r.id === roomId)!.polygon)
-          if (rect) drag = { kind: 'move', roomId, grabOffset: { x: world.x - rect.x, y: world.y - rect.y } }
+          const b = polygonBounds(store.plan.rooms.find((r) => r.id === roomId)!.polygon)
+          drag = { kind: 'move', roomId, grabOffset: { x: world.x - b.x, y: world.y - b.y } }
         }
       }
 
@@ -303,53 +312,55 @@ export function Editor2D() {
 
         if (drag.kind === 'move') {
           const activeDrag = drag
-
           const store = usePlanStore.getState()
           const room = store.plan.rooms.find((r) => r.id === activeDrag.roomId)
-          const rect = room ? polygonToRect(room.polygon) : null
-          if (!rect) return
-
+          if (!room) return
+          const b = polygonBounds(room.polygon)
           const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
-          const raw: Rect = { ...rect, x: world.x - activeDrag.grabOffset.x, y: world.y - activeDrag.grabOffset.y }
-
-          if (altDown) {
-            guides = []
-            store.updateRoomRect(activeDrag.roomId, raw)
-          } else {
+          const raw: Rect = { ...b, x: world.x - activeDrag.grabOffset.x, y: world.y - activeDrag.grabOffset.y }
+          let target = { x: raw.x, y: raw.y }
+          guides = []
+          if (!altDown) {
             const lines = collectSnapLines(otherRooms(activeDrag.roomId), store.plan.apartment)
             const snapped = snapMove(raw, lines, snapOpts())
             guides = snapped.guides
-            store.updateRoomRect(activeDrag.roomId, { ...raw, x: snapped.x, y: snapped.y })
+            target = { x: snapped.x, y: snapped.y }
           }
+          store.moveRoom(activeDrag.roomId, { x: roundCm(target.x - b.x), y: roundCm(target.y - b.y) })
           markDirty()
         }
 
-        if (drag.kind === 'resize') {
+        if (drag.kind === 'pushEdge') {
           const activeDrag = drag
           const store = usePlanStore.getState()
-          const room = store.plan.rooms.find((r) => r.id === activeDrag.roomId)
-          const rect = room ? polygonToRect(room.polygon) : null
-          if (!rect) return
+          const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+          let coordinate = activeDrag.horizontal ? world.y : world.x
+          guides = []
+          if (!altDown) {
+            const lines = collectSnapLines(otherRooms(activeDrag.roomId), store.plan.apartment)
+            const snapped = snapScalar(coordinate, activeDrag.horizontal ? lines.ys : lines.xs, snapOpts())
+            coordinate = snapped.value
+            if (snapped.guide !== null) guides.push({ axis: activeDrag.horizontal ? 'y' : 'x', position: snapped.guide })
+          }
+          store.pushRoomEdge(activeDrag.roomId, activeDrag.edgeIndex, roundCm(coordinate))
+          markDirty()
+        }
 
+        if (drag.kind === 'moveVertex') {
+          const activeDrag = drag
+          const store = usePlanStore.getState()
           let point = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
           guides = []
-
           if (!altDown) {
             const lines = collectSnapLines(otherRooms(activeDrag.roomId), store.plan.apartment)
             const opts = snapOpts()
-            if (activeDrag.handle.includes('e') || activeDrag.handle.includes('w')) {
-              const sx = snapScalar(point.x, lines.xs, opts)
-              point = { ...point, x: sx.value }
-              if (sx.guide !== null) guides.push({ axis: 'x', position: sx.guide })
-            }
-            if (activeDrag.handle.includes('n') || activeDrag.handle.includes('s')) {
-              const sy = snapScalar(point.y, lines.ys, opts)
-              point = { ...point, y: sy.value }
-              if (sy.guide !== null) guides.push({ axis: 'y', position: sy.guide })
-            }
+            const sx = snapScalar(point.x, lines.xs, opts)
+            const sy = snapScalar(point.y, lines.ys, opts)
+            point = { x: sx.value, y: sy.value }
+            if (sx.guide !== null) guides.push({ axis: 'x', position: sx.guide })
+            if (sy.guide !== null) guides.push({ axis: 'y', position: sy.guide })
           }
-
-          store.updateRoomRect(activeDrag.roomId, applyResize(rect, activeDrag.handle, point))
+          store.moveRoomVertex(activeDrag.roomId, activeDrag.vertexIndex, point)
           markDirty()
         }
 
@@ -416,6 +427,9 @@ export function Editor2D() {
       const endInteraction = (e?: FederatedPointerEvent) => {
         panning = null
         revertDragIfColliding()
+        if (drag.kind === 'pushEdge' || drag.kind === 'moveVertex') {
+          usePlanStore.getState().mergeRoomCollinear(drag.roomId)
+        }
         if (drag.kind !== 'idle' || guides.length > 0) {
           drag = { kind: 'idle' }
           guides = []
@@ -426,6 +440,21 @@ export function Editor2D() {
       app.stage.on('pointerup', endInteraction)
       app.stage.on('pointerupoutside', endInteraction)
       app.stage.on('pointercancel', endInteraction)
+
+      // Double-click a wall of the selected room to split it into two edges at the click point.
+      app.stage.on('pointertap', (e) => {
+        if (e.detail !== 2) return
+        const store = usePlanStore.getState()
+        if (store.placing || store.placingFurniture) return
+        if (store.selection?.kind !== 'room') return
+        const room = store.plan.rooms.find((r) => r.id === store.selection!.id)
+        if (!room) return
+        const hit = nearestRoomEdge(room, viewport, { x: e.global.x, y: e.global.y })
+        if (hit) {
+          store.splitRoomEdge(room.id, hit.edgeIndex, hit.t)
+          markDirty()
+        }
+      })
 
       const onWheel = (ev: WheelEvent) => {
         ev.preventDefault()
@@ -509,7 +538,7 @@ export function Editor2D() {
         const selectedRoom = selectedId
           ? store.plan.rooms.find((r) => r.id === selectedId)
           : undefined
-        drawHandles(layers.handles, selectedRoom ? polygonToRect(selectedRoom.polygon) : null, viewport)
+        drawPolygonHandles(layers.handles, selectedRoom ?? null, viewport)
         const selectedFurnitureItem =
           sel?.kind === 'furniture' ? store.plan.furniture.find((f) => f.id === sel.id) : undefined
         const selectedFloorItem =

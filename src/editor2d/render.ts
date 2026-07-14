@@ -5,8 +5,8 @@ import { collidingFurnitureIds, wallItemSpan } from '../model/furniture'
 import { openingSpan, openingWarnings, roomEdge } from '../model/openings'
 import { polygonBounds, polygonCentroid } from '../model/polygon'
 import type { SnapGuide } from '../model/snapping'
-import type { Apartment, FloorItem, PlacedItem, Plan, Rect, Selection, Vec2 } from '../model/types'
-import { handlePositions, rotationHandleScreen } from './interactions'
+import type { Apartment, FloorItem, PlacedItem, Plan, Room, Selection, Vec2 } from '../model/types'
+import { polygonHandles, rotationHandleScreen } from './interactions'
 import type { EdgeHit } from './interactions'
 import { symbolPaths, type SymbolCmd } from './symbols'
 import { screenToWorld, worldToScreen, type Viewport } from './viewport'
@@ -98,12 +98,15 @@ export function drawRooms(container: Container, plan: Plan, selectedId: string |
   }
 }
 
-export function drawHandles(g: Graphics, rect: Rect | null, viewport: Viewport) {
+export function drawPolygonHandles(g: Graphics, room: Room | null, viewport: Viewport) {
   g.clear()
-  if (!rect) return
-  for (const pos of Object.values(handlePositions(rect))) {
-    const s = worldToScreen(viewport, pos)
-    g.rect(s.x - 4, s.y - 4, 8, 8).fill({ color: 0xffffff }).stroke({ width: 1.5, color: 0x1d4ed8 })
+  if (!room) return
+  for (const h of polygonHandles(room)) {
+    const s = worldToScreen(viewport, h.point)
+    const half = h.kind === 'vertex' ? 4 : 3
+    g.rect(s.x - half, s.y - half, half * 2, half * 2)
+      .fill({ color: h.kind === 'vertex' ? 0xffffff : 0xe8edff })
+      .stroke({ width: 1.5, color: 0x1d4ed8 })
   }
 }
 

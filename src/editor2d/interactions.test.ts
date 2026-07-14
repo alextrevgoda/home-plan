@@ -3,15 +3,16 @@ import { createDefaultPlan } from '../model/serialization'
 import { rectToPolygon } from '../model/geometry'
 import type { FloorItem, Opening, Plan, Room, WallItem } from '../model/types'
 import {
-  applyResize,
   distToSegmentScreen,
-  handlePositions,
+  edgeIsHorizontal,
   hitFurniture,
-  hitHandle,
   hitOpening,
+  hitPolygonHandle,
   hitRoom,
   hitRotationHandle,
   nearestEdge,
+  nearestRoomEdge,
+  polygonHandles,
   rotationFromPointer,
   rotationHandleScreen,
 } from './interactions'
@@ -23,13 +24,37 @@ const roomAt = (x: number, y: number, w: number, h: number, id: string): Room =>
   color: '#8ecae6',
 })
 
-describe('handlePositions', () => {
-  it('places corner and midpoint handles', () => {
-    const pos = handlePositions({ x: 1, y: 1, width: 2, height: 1 })
-    expect(pos.nw).toEqual({ x: 1, y: 1 })
-    expect(pos.se).toEqual({ x: 3, y: 2 })
-    expect(pos.n).toEqual({ x: 2, y: 1 })
-    expect(pos.w).toEqual({ x: 1, y: 1.5 })
+describe('polygonHandles', () => {
+  const viewport = { scale: 100, offsetX: 0, offsetY: 0 }
+  const rect = { id: 'r1', name: 'A', color: '#8ecae6', polygon: rectToPolygon({ x: 0, y: 0, width: 4, height: 3 }) }
+
+  it('a rect exposes 4 vertex + 4 edge handles', () => {
+    const handles = polygonHandles(rect)
+    expect(handles.filter((h) => h.kind === 'vertex')).toHaveLength(4)
+    expect(handles.filter((h) => h.kind === 'edge')).toHaveLength(4)
+    expect(handles.find((h) => h.kind === 'edge' && h.index === 0)?.point).toEqual({ x: 2, y: 0 })
+  })
+
+  it('split vertices get no vertex handle but both sub-edges get edge handles', () => {
+    const split = { ...rect, polygon: [
+      { x: 0, y: 0 }, { x: 2, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 } ] }
+    const handles = polygonHandles(split)
+    expect(handles.filter((h) => h.kind === 'vertex')).toHaveLength(4) // corner count unchanged
+    expect(handles.filter((h) => h.kind === 'edge')).toHaveLength(5)
+    expect(handles.some((h) => h.kind === 'vertex' && h.point.x === 2 && h.point.y === 0)).toBe(false)
+  })
+
+  it('hitPolygonHandle: vertex wins over edge within radius', () => {
+    expect(hitPolygonHandle(rect, viewport, { x: 200, y: -3 })).toMatchObject({ kind: 'edge', index: 0 }) // top-edge midpoint (2,0) → screen (200,0)
+    expect(hitPolygonHandle(rect, viewport, { x: 3, y: 4 })).toMatchObject({ kind: 'vertex', index: 0 }) // near (0,0)
+    expect(hitPolygonHandle(rect, viewport, { x: 200, y: 150 })).toBeNull() // room center
+  })
+
+  it('edgeIsHorizontal and nearestRoomEdge', () => {
+    expect(edgeIsHorizontal(rect.polygon, 0)).toBe(true)
+    expect(edgeIsHorizontal(rect.polygon, 1)).toBe(false)
+    expect(nearestRoomEdge(rect, viewport, { x: 150, y: 4 })).toEqual({ edgeIndex: 0, t: 1.5 })
+    expect(nearestRoomEdge(rect, viewport, { x: 150, y: 150 })).toBeNull()
   })
 })
 
@@ -64,39 +89,6 @@ describe('hitRoom', () => {
   it('hits inside the L-shaped room arm', () => {
     expect(hitRoom([lRoom], { x: 1, y: 0.5 })).toBe('l')
     expect(hitRoom([lRoom], { x: 3, y: 2 })).toBe('l')
-  })
-})
-
-describe('hitHandle', () => {
-  const viewport = { offsetX: 0, offsetY: 0, scale: 100 }
-  const rect = { x: 1, y: 1, width: 2, height: 1 }
-
-  it('hits the south-east handle within radius', () => {
-    expect(hitHandle(rect, viewport, { x: 305, y: 195 })).toBe('se')
-  })
-
-  it('misses when outside radius', () => {
-    expect(hitHandle(rect, viewport, { x: 320, y: 220 })).toBeNull()
-  })
-})
-
-describe('applyResize', () => {
-  const rect = { x: 1, y: 1, width: 3, height: 2 }
-
-  it('moves the east edge and keeps x anchored', () => {
-    expect(applyResize(rect, 'e', { x: 5.5, y: 0 })).toEqual({ x: 1, y: 1, width: 4.5, height: 2 })
-  })
-
-  it('moves the west edge and keeps the right edge anchored', () => {
-    expect(applyResize(rect, 'w', { x: 0.5, y: 0 })).toEqual({ x: 0.5, y: 1, width: 3.5, height: 2 })
-  })
-
-  it('clamps to minimum size against the anchored edge', () => {
-    expect(applyResize(rect, 'w', { x: 9, y: 0 })).toEqual({ x: 3.5, y: 1, width: 0.5, height: 2 })
-  })
-
-  it('resizes two edges from a corner handle', () => {
-    expect(applyResize(rect, 'se', { x: 5, y: 4 })).toEqual({ x: 1, y: 1, width: 4, height: 3 })
   })
 })
 
