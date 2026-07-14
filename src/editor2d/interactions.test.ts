@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultPlan } from '../model/serialization'
 import { rectToPolygon } from '../model/geometry'
-import type { Opening, Plan, Room } from '../model/types'
-import { applyResize, distToSegmentScreen, handlePositions, hitHandle, hitOpening, hitRoom, nearestEdge } from './interactions'
+import type { FloorItem, Opening, Plan, Room, WallItem } from '../model/types'
+import {
+  applyResize,
+  distToSegmentScreen,
+  handlePositions,
+  hitFurniture,
+  hitHandle,
+  hitOpening,
+  hitRoom,
+  nearestEdge,
+} from './interactions'
 
 const roomAt = (x: number, y: number, w: number, h: number, id: string): Room => ({
   id,
@@ -112,5 +121,34 @@ describe('nearestEdge', () => {
 
   it('returns null when no edge is within the radius', () => {
     expect(nearestEdge(planWithOpenings([]), viewport, { x: 200, y: 150 })).toBeNull()
+  })
+})
+
+describe('hitFurniture', () => {
+  const viewport = { scale: 100, offsetX: 0, offsetY: 0 }
+  const sofa: FloorItem = { id: 'sofa', catalogId: 'sofa-3seat', mount: 'floor',
+    position: { x: 2, y: 2 }, rotation: 0, size: { width: 2.2, depth: 0.95, height: 0.85 } }
+  const rugUnder: FloorItem = { id: 'rug', catalogId: 'rug-rect', mount: 'floor',
+    position: { x: 2, y: 2 }, rotation: 0, size: { width: 3, depth: 2, height: 0.01 } }
+  const room = { id: 'r1', name: 'A', color: '#8ecae6', polygon: [
+    { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 } ] }
+  const art: WallItem = { id: 'art', catalogId: 'wall-art', mount: 'wall', roomId: 'r1',
+    edgeIndex: 0, offset: 2, elevation: 1.4, size: { width: 0.8, depth: 0.05, height: 0.6 } }
+  const plan = { ...createDefaultPlan(), rooms: [room], furniture: [rugUnder, sofa, art] }
+
+  it('solid wins over underlay at the same point', () => {
+    expect(hitFurniture(plan, viewport, { x: 200, y: 200 })).toBe('sofa')
+  })
+  it('exposed rug is hit where the sofa is not', () => {
+    expect(hitFurniture(plan, viewport, { x: 200, y: 280 })).toBe('rug')
+  })
+  it('wall item hit by proximity to its span', () => {
+    expect(hitFurniture(plan, viewport, { x: 200, y: 4 })).toBe('art')
+  })
+  it('misses empty space and respects rotation', () => {
+    expect(hitFurniture(plan, viewport, { x: 390, y: 290 })).toBeNull()
+    const rotated = { ...plan, furniture: [{ ...sofa, rotation: 90 }] }
+    expect(hitFurniture(rotated, viewport, { x: 200, y: 290 })).toBe('sofa') // depth now along x
+    expect(hitFurniture(rotated, viewport, { x: 290, y: 200 })).toBeNull()
   })
 })

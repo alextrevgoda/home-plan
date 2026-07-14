@@ -2,16 +2,26 @@ import { Application, Container, Graphics } from 'pixi.js'
 import { useEffect, useRef } from 'react'
 import { catalogItem } from '../model/catalog'
 import { roundCm, polygonToRect } from '../model/geometry'
-import { floorItemCollides, floorItemInBounds, snapFloorItemToWall } from '../model/furniture'
+import { floorItemCollides, floorItemInBounds, isSolidFloorItem, snapFloorItemToWall } from '../model/furniture'
 import { projectOntoEdge, roomEdge } from '../model/openings'
 import { collectSnapLines, snapMove, snapScalar, type SnapGuide, type SnapOptions } from '../model/snapping'
 import type { Rect, Vec2 } from '../model/types'
 import { usePlanStore } from '../store/planStore'
 import { useToast } from '../ui/toast'
-import { applyResize, hitHandle, hitOpening, hitRoom, nearestEdge, type EdgeHit, type HandleId } from './interactions'
+import {
+  applyResize,
+  hitFurniture,
+  hitHandle,
+  hitOpening,
+  hitRoom,
+  nearestEdge,
+  type EdgeHit,
+  type HandleId,
+} from './interactions'
 import {
   drawBoundary,
   drawEdgeHighlight,
+  drawFurniture,
   drawFurnitureGhost,
   drawGrid,
   drawGuides,
@@ -47,6 +57,7 @@ export function Editor2D() {
         grid: new Graphics(),
         boundary: new Graphics(),
         rooms: new Container(),
+        furniture: new Container(),
         openings: new Graphics(),
         edgeHighlight: new Graphics(),
         ghost: new Graphics(),
@@ -57,6 +68,7 @@ export function Editor2D() {
         layers.grid,
         layers.boundary,
         layers.rooms,
+        layers.furniture,
         layers.openings,
         layers.edgeHighlight,
         layers.ghost,
@@ -85,6 +97,8 @@ export function Editor2D() {
         | { kind: 'move'; roomId: string; grabOffset: Vec2 }
         | { kind: 'resize'; roomId: string; handle: HandleId }
         | { kind: 'moveOpening'; openingId: string }
+        | { kind: 'moveFloorItem'; itemId: string; grabOffset: Vec2; start: { position: Vec2; rotation: number } }
+        | { kind: 'moveWallItem'; itemId: string }
       let drag: DragState = { kind: 'idle' }
       let hoverEdge: EdgeHit | null = null
       let ghost: FurnitureGhost | null = null
@@ -151,6 +165,23 @@ export function Editor2D() {
         if (openingId) {
           store.selectOpening(openingId)
           drag = { kind: 'moveOpening', openingId }
+          markDirty()
+          return
+        }
+
+        const furnitureId = hitFurniture(store.plan, viewport, screen)
+        if (furnitureId) {
+          const item = store.plan.furniture.find((f) => f.id === furnitureId)!
+          store.selectFurniture(furnitureId)
+          if (item.mount === 'floor') {
+            drag = {
+              kind: 'moveFloorItem', itemId: furnitureId,
+              grabOffset: { x: world.x - item.position.x, y: world.y - item.position.y },
+              start: { position: item.position, rotation: item.rotation },
+            }
+          } else {
+            drag = { kind: 'moveWallItem', itemId: furnitureId }
+          }
           markDirty()
           return
         }
@@ -276,10 +307,39 @@ export function Editor2D() {
           store.moveOpening(activeDrag.openingId, roundCm(projectOntoEdge(edge, world)))
           markDirty()
         }
+
+        if (drag.kind === 'moveFloorItem') {
+          const activeDrag = drag
+          const store = usePlanStore.getState()
+          const item = store.plan.furniture.find((f) => f.id === activeDrag.itemId)
+          if (!item || item.mount !== 'floor') return
+          const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+          const raw = { x: world.x - activeDrag.grabOffset.x, y: world.y - activeDrag.grabOffset.y }
+          const snap = altDown ? null : snapFloorItemToWall(raw, item.size, store.plan)
+          if (snap) store.moveFloorItem(activeDrag.itemId, snap.position, snap.rotation)
+          else store.moveFloorItem(activeDrag.itemId, { x: roundCm(raw.x), y: roundCm(raw.y) })
+          markDirty()
+        }
+
+        if (drag.kind === 'moveWallItem') {
+          const activeDrag = drag
+          const store = usePlanStore.getState()
+          const hit = nearestEdge(store.plan, viewport, { x: e.global.x, y: e.global.y }, 20)
+          if (hit) store.moveWallItem(activeDrag.itemId, hit.roomId, hit.edgeIndex, hit.offset)
+          markDirty()
+        }
       })
 
       const endInteraction = () => {
         panning = null
+        if (drag.kind === 'moveFloorItem') {
+          const activeDrag = drag
+          const store = usePlanStore.getState()
+          const item = store.plan.furniture.find((f) => f.id === activeDrag.itemId)
+          if (item && isSolidFloorItem(item) && floorItemCollides(item, store.plan, item.id)) {
+            store.moveFloorItem(item.id, activeDrag.start.position, activeDrag.start.rotation)
+          }
+        }
         if (drag.kind !== 'idle' || guides.length > 0) {
           drag = { kind: 'idle' }
           guides = []
@@ -311,6 +371,7 @@ export function Editor2D() {
           const store = usePlanStore.getState()
           if (store.selection?.kind === 'opening') store.deleteOpening(store.selection.id)
           else if (store.selection?.kind === 'room') store.deleteRoom(store.selection.id)
+          else if (store.selection?.kind === 'furniture') store.deleteFurniture(store.selection.id)
           return
         }
         if (ev.key === 'Escape' && !isTypingTarget(ev)) {
@@ -353,6 +414,7 @@ export function Editor2D() {
         const sel = store.selection
         const selectedId = sel?.kind === 'room' ? sel.id : null
         drawRooms(layers.rooms, store.plan, selectedId, viewport)
+        drawFurniture(layers.furniture, store.plan, store.selection, viewport)
         drawOpenings(layers.openings, store.plan, store.selection, viewport)
         drawEdgeHighlight(
           layers.edgeHighlight,

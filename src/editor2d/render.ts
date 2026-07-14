@@ -1,9 +1,10 @@
 import { Container, Graphics, Text } from 'pixi.js'
-import { catalogItem } from '../model/catalog'
+import { catalogItem, floorFinish } from '../model/catalog'
 import { polygonToRect, rectInBounds, rectsOverlap } from '../model/geometry'
+import { collidingFurnitureIds, wallItemSpan } from '../model/furniture'
 import { openingSpan, openingWarnings, roomEdge } from '../model/openings'
 import type { SnapGuide } from '../model/snapping'
-import type { Apartment, Plan, Rect, Selection, Vec2 } from '../model/types'
+import type { Apartment, PlacedItem, Plan, Rect, Selection, Vec2 } from '../model/types'
 import { handlePositions } from './interactions'
 import type { EdgeHit } from './interactions'
 import { symbolPaths, type SymbolCmd } from './symbols'
@@ -77,6 +78,13 @@ export function drawRooms(container: Container, plan: Plan, selectedId: string |
       .fill({ color: warning ? WARNING_COLOR : room.color, alpha: 0.55 })
       .stroke({ width: selected ? 3 : 1.5, color: selected ? 0x1d4ed8 : 0x475069 })
     container.addChild(g)
+
+    const finish = room.floorMaterial ? floorFinish(room.floorMaterial) : undefined
+    if (finish) {
+      const tintG = new Graphics()
+      tintG.rect(tl.x, tl.y, w, h).fill({ color: finish.tint, alpha: 0.35 })
+      container.addChild(tintG)
+    }
 
     const label = new Text({
       text: `${room.name}\n${rect.width.toFixed(2)} × ${rect.height.toFixed(2)}`,
@@ -182,6 +190,59 @@ export function paintSymbol(g: Graphics, cmds: SymbolCmd[]) {
     if (c.kind === 'rect') g.rect(c.x, c.y, c.w, c.h)
     else if (c.kind === 'line') g.moveTo(c.x1, c.y1).lineTo(c.x2, c.y2)
     else g.circle(c.cx, c.cy, c.r)
+  }
+}
+
+const FURNITURE_COLOR = 0x39414f
+const FURNITURE_SELECTED = 0x1d4ed8
+const FURNITURE_WARNING = 0xe07a5f
+
+export function drawFurniture(container: Container, plan: Plan, selection: Selection | null, viewport: Viewport) {
+  for (const child of container.removeChildren()) child.destroy(true)
+  const colliding = collidingFurnitureIds(plan)
+  const layerRank = (item: PlacedItem) => {
+    if (item.mount === 'wall') return 2
+    return catalogItem(item.catalogId)?.layer === 'underlay' ? 0 : 1
+  }
+  const ordered = [...plan.furniture].sort((a, b) => layerRank(a) - layerRank(b))
+
+  for (const item of ordered) {
+    const cat = catalogItem(item.catalogId)
+    if (!cat) continue
+    const selected = selection?.kind === 'furniture' && selection.id === item.id
+    const color = selected ? FURNITURE_SELECTED : colliding.has(item.id) ? FURNITURE_WARNING : FURNITURE_COLOR
+    const g = new Graphics()
+
+    if (item.mount === 'floor') {
+      const w = item.size.width * viewport.scale
+      const h = item.size.depth * viewport.scale
+      const cmds = symbolPaths(cat.symbolId, w, h)
+      if (!cmds) continue
+      if (cat.layer === 'underlay') g.rect(-w / 2, -h / 2, w, h).fill({ color: 0xd8cfc0, alpha: 0.5 })
+      if (selected) g.rect(-w / 2, -h / 2, w, h).fill({ color, alpha: 0.08 })
+      paintSymbol(g, cmds)
+      g.stroke({ width: selected ? 2.5 : 1.5, color })
+      const s = worldToScreen(viewport, item.position)
+      g.position.set(s.x, s.y)
+      g.rotation = (item.rotation * Math.PI) / 180
+    } else {
+      const room = plan.rooms.find((r) => r.id === item.roomId)
+      const span = room ? wallItemSpan(item, room) : null
+      if (!span) continue
+      const a = worldToScreen(viewport, span.a)
+      const b = worldToScreen(viewport, span.b)
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const len = Math.hypot(dx, dy) || 1
+      const px = -dy / len
+      const py = dx / len
+      const off = 5 // draw just inside the room
+      g.moveTo(a.x + px * off, a.y + py * off).lineTo(b.x + px * off, b.y + py * off)
+      g.moveTo(a.x + px * 2, a.y + py * 2).lineTo(a.x + px * (off + 3), a.y + py * (off + 3))
+      g.moveTo(b.x + px * 2, b.y + py * 2).lineTo(b.x + px * (off + 3), b.y + py * (off + 3))
+      g.stroke({ width: selected ? 3 : 2, color })
+    }
+    container.addChild(g)
   }
 }
 

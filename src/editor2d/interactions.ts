@@ -1,4 +1,6 @@
 import { MIN_ROOM_SIZE, polygonToRect, roundCm } from '../model/geometry'
+import { catalogItem, type Layer } from '../model/catalog'
+import { footprintCorners, pointInConvexPolygon, wallItemSpan } from '../model/furniture'
 import type { Plan, Rect, Room, Vec2 } from '../model/types'
 import { worldToScreen, screenToWorld, type Viewport } from './viewport'
 import { openingSpan, projectOntoEdge, roomEdge } from '../model/openings'
@@ -115,4 +117,28 @@ export function nearestEdge(plan: Plan, viewport: Viewport, screen: Vec2, radius
     }
   }
   return best
+}
+
+export function hitFurniture(plan: Plan, viewport: Viewport, screen: Vec2, radius = 8): string | null {
+  // wall items are topmost
+  for (let i = plan.furniture.length - 1; i >= 0; i--) {
+    const item = plan.furniture[i]
+    if (item.mount !== 'wall') continue
+    const room = plan.rooms.find((r) => r.id === item.roomId)
+    const span = room ? wallItemSpan(item, room) : null
+    if (!span) continue
+    const a = worldToScreen(viewport, span.a)
+    const b = worldToScreen(viewport, span.b)
+    if (distToSegmentScreen(screen, a, b) <= radius) return item.id
+  }
+  const world = screenToWorld(viewport, screen)
+  const hitLayer = (layer: Layer): string | null => {
+    for (let i = plan.furniture.length - 1; i >= 0; i--) {
+      const item = plan.furniture[i]
+      if (item.mount !== 'floor' || catalogItem(item.catalogId)?.layer !== layer) continue
+      if (pointInConvexPolygon(world, footprintCorners(item.position, item.rotation, item.size))) return item.id
+    }
+    return null
+  }
+  return hitLayer('overlay') ?? hitLayer('solid') ?? hitLayer('underlay')
 }
