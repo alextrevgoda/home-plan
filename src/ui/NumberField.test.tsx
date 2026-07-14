@@ -55,3 +55,8 @@ it('reverts to the previous value and does not commit when the field is cleared'
   expect(input.value).toBe('7')
   expect(onCommit).not.toHaveBeenCalled()
 })
+
+it('hints the decimal keyboard for touch devices', () => {
+  render(<NumberField label="Width (m)" value={2} onCommit={() => {}} />)
+  expect(screen.getByLabelText('Width (m)')).toHaveAttribute('inputmode', 'decimal')
+})

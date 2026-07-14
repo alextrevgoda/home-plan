@@ -73,3 +73,66 @@ html, body, #root { height: 100%; margin: 0; font-family: system-ui, sans-serif;
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
   background: #1f2430; color: #fff; padding: 10px 16px; border-radius: 8px; z-index: 10;
 }
+
+/* ---------- mobile (breakpoint must match MOBILE_LAYOUT_QUERY) ---------- */
+
+.mobile-only { display: none; }
+
+button, input, select { touch-action: manipulation; }
+body { overscroll-behavior: none; }
+
+/* iOS Safari: 100% of the layout viewport leaves a dead zone under the collapsing
+   address bar; dvh tracks the visible viewport. */
+@supports (height: 100dvh) {
+  html, body, #root { height: 100dvh; }
+}
+
+@media (max-width: 768px) {
+  .mobile-only { display: inline-block; }
+
+  .toolbar { overflow-x: auto; gap: 8px; }
+  .toolbar strong { display: none; }
+  .toolbar button { padding: 10px 12px; flex-shrink: 0; }
+
+  .panel,
+  .catalog {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    border: none;
+    border-top: 1px solid #dde1e6;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+    background: #fff;
+    z-index: 5;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+  .panel {
+    max-height: 40vh;
+    max-height: 40dvh;
+    overflow-y: auto;
+    padding-top: 36px; /* room for the floating close button */
+  }
+  .catalog {
+    max-height: 55vh;
+    max-height: 55dvh;
+  }
+  .catalog .catalog-tabs { padding-right: 44px; }
+  .catalog-items { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+  .catalog-items button,
+  .catalog-tabs button { min-height: 44px; }
+  .panel .field input,
+  .panel button { min-height: 40px; }
+
+  .sheet-close {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    border: none;
+    background: transparent;
+    font-size: 18px;
+    padding: 8px 10px;
+  }
+}

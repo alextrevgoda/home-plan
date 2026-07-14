@@ -27,6 +27,7 @@ export function NumberField({ label, value, onCommit }: Props) {
     <label className="field">
       {label}
       <input
+        inputMode="decimal"
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
