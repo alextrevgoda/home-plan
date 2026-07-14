@@ -1,10 +1,12 @@
 import { Container, Graphics, Text } from 'pixi.js'
+import { catalogItem } from '../model/catalog'
 import { polygonToRect, rectInBounds, rectsOverlap } from '../model/geometry'
 import { openingSpan, openingWarnings, roomEdge } from '../model/openings'
 import type { SnapGuide } from '../model/snapping'
-import type { Apartment, Plan, Rect, Selection } from '../model/types'
+import type { Apartment, Plan, Rect, Selection, Vec2 } from '../model/types'
 import { handlePositions } from './interactions'
 import type { EdgeHit } from './interactions'
+import { symbolPaths, type SymbolCmd } from './symbols'
 import { screenToWorld, worldToScreen, type Viewport } from './viewport'
 
 const isMajor = (v: number) => Math.abs(v - Math.round(v)) < 1e-6
@@ -173,4 +175,42 @@ export function drawEdgeHighlight(g: Graphics, hit: EdgeHit | null, plan: Plan, 
   const a = worldToScreen(viewport, edge.a)
   const b = worldToScreen(viewport, edge.b)
   g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 5, color: 0x22c55e, alpha: 0.6 })
+}
+
+export function paintSymbol(g: Graphics, cmds: SymbolCmd[]) {
+  for (const c of cmds) {
+    if (c.kind === 'rect') g.rect(c.x, c.y, c.w, c.h)
+    else if (c.kind === 'line') g.moveTo(c.x1, c.y1).lineTo(c.x2, c.y2)
+    else g.circle(c.cx, c.cy, c.r)
+  }
+}
+
+export interface FurnitureGhost {
+  catalogId: string
+  position: Vec2
+  rotation: number
+  valid: boolean
+}
+
+const GHOST_VALID = 0x1d4ed8
+const GHOST_INVALID = 0xe07a5f
+
+export function drawFurnitureGhost(g: Graphics, ghost: FurnitureGhost | null, viewport: Viewport) {
+  g.clear()
+  g.rotation = 0
+  g.position.set(0, 0)
+  if (!ghost) return
+  const cat = catalogItem(ghost.catalogId)
+  if (!cat) return
+  const w = cat.defaultSize.width * viewport.scale
+  const h = cat.defaultSize.depth * viewport.scale
+  const cmds = symbolPaths(cat.symbolId, w, h)
+  if (!cmds) return
+  const color = ghost.valid ? GHOST_VALID : GHOST_INVALID
+  const s = worldToScreen(viewport, ghost.position)
+  g.position.set(s.x, s.y)
+  g.rotation = (ghost.rotation * Math.PI) / 180
+  g.rect(-w / 2, -h / 2, w, h).fill({ color, alpha: 0.12 })
+  paintSymbol(g, cmds)
+  g.stroke({ width: 1.5, color, alpha: 0.8 })
 }

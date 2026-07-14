@@ -1,13 +1,25 @@
 import { Application, Container, Graphics } from 'pixi.js'
 import { useEffect, useRef } from 'react'
+import { catalogItem } from '../model/catalog'
 import { roundCm, polygonToRect } from '../model/geometry'
+import { floorItemCollides, floorItemInBounds, snapFloorItemToWall } from '../model/furniture'
 import { projectOntoEdge, roomEdge } from '../model/openings'
 import { collectSnapLines, snapMove, snapScalar, type SnapGuide, type SnapOptions } from '../model/snapping'
 import type { Rect, Vec2 } from '../model/types'
 import { usePlanStore } from '../store/planStore'
 import { useToast } from '../ui/toast'
 import { applyResize, hitHandle, hitOpening, hitRoom, nearestEdge, type EdgeHit, type HandleId } from './interactions'
-import { drawBoundary, drawEdgeHighlight, drawGrid, drawGuides, drawHandles, drawOpenings, drawRooms } from './render'
+import {
+  drawBoundary,
+  drawEdgeHighlight,
+  drawFurnitureGhost,
+  drawGrid,
+  drawGuides,
+  drawHandles,
+  drawOpenings,
+  drawRooms,
+  type FurnitureGhost,
+} from './render'
 import { fitApartment, screenToWorld, zoomAt, type Viewport } from './viewport'
 
 function isTypingTarget(ev: KeyboardEvent) {
@@ -37,6 +49,7 @@ export function Editor2D() {
         rooms: new Container(),
         openings: new Graphics(),
         edgeHighlight: new Graphics(),
+        ghost: new Graphics(),
         guides: new Graphics(),
         handles: new Graphics(),
       }
@@ -46,6 +59,7 @@ export function Editor2D() {
         layers.rooms,
         layers.openings,
         layers.edgeHighlight,
+        layers.ghost,
         layers.guides,
         layers.handles,
       )
@@ -73,6 +87,7 @@ export function Editor2D() {
         | { kind: 'moveOpening'; openingId: string }
       let drag: DragState = { kind: 'idle' }
       let hoverEdge: EdgeHit | null = null
+      let ghost: FurnitureGhost | null = null
       let guides: SnapGuide[] = []
       let altDown = false
 
@@ -107,6 +122,26 @@ export function Editor2D() {
           if (hit) store.addOpening(store.placing, hit.roomId, hit.edgeIndex, hit.offset)
           else store.setPlacing(null)
           hoverEdge = null
+          ghost = null
+          markDirty()
+          return
+        }
+
+        // armed furniture placement: floor items place from the ghost, wall items attach to the nearest edge
+        if (store.placingFurniture) {
+          const cat = catalogItem(store.placingFurniture)
+          if (cat?.mount === 'floor') {
+            if (ghost?.valid) {
+              store.placeFurniture(cat.id, { mount: 'floor', position: ghost.position, rotation: ghost.rotation })
+              ghost = null
+            }
+          } else if (cat) {
+            const hit = nearestEdge(store.plan, viewport, screen)
+            if (hit) {
+              store.placeFurniture(cat.id, { mount: 'wall', roomId: hit.roomId, edgeIndex: hit.edgeIndex, offset: hit.offset })
+              hoverEdge = null
+            }
+          }
           markDirty()
           return
         }
@@ -151,6 +186,26 @@ export function Editor2D() {
           return
         }
         const hoverStore = usePlanStore.getState()
+        if (hoverStore.placingFurniture) {
+          const cat = catalogItem(hoverStore.placingFurniture)
+          if (cat?.mount === 'floor') {
+            const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+            const snap = altDown ? null : snapFloorItemToWall(world, cat.defaultSize, hoverStore.plan)
+            const position = snap?.position ?? world
+            const rotation = snap?.rotation ?? 0
+            const candidate = { position, rotation, size: cat.defaultSize }
+            const valid =
+              floorItemInBounds(candidate, hoverStore.plan.apartment) &&
+              (cat.layer !== 'solid' || !floorItemCollides(candidate, hoverStore.plan))
+            ghost = { catalogId: cat.id, position, rotation, valid }
+            hoverEdge = null
+          } else if (cat) {
+            ghost = null
+            hoverEdge = nearestEdge(hoverStore.plan, viewport, { x: e.global.x, y: e.global.y })
+          }
+          markDirty()
+          return
+        }
         if (hoverStore.placing) {
           hoverEdge = nearestEdge(hoverStore.plan, viewport, { x: e.global.x, y: e.global.y })
           markDirty()
@@ -264,8 +319,11 @@ export function Editor2D() {
             guides = []
           }
           const store = usePlanStore.getState()
-          if (store.placing) store.setPlacing(null)
-          else store.selectRoom(null)
+          if (store.placing || store.placingFurniture) {
+            store.setPlacing(null)
+            store.setPlacingFurniture(null)
+            ghost = null
+          } else store.selectRoom(null)
           hoverEdge = null
           markDirty()
           return
@@ -296,8 +354,14 @@ export function Editor2D() {
         const selectedId = sel?.kind === 'room' ? sel.id : null
         drawRooms(layers.rooms, store.plan, selectedId, viewport)
         drawOpenings(layers.openings, store.plan, store.selection, viewport)
-        drawEdgeHighlight(layers.edgeHighlight, store.placing ? hoverEdge : null, store.plan, viewport)
-        app.canvas.style.cursor = store.placing ? 'crosshair' : 'default'
+        drawEdgeHighlight(
+          layers.edgeHighlight,
+          store.placing || store.placingFurniture ? hoverEdge : null,
+          store.plan,
+          viewport,
+        )
+        drawFurnitureGhost(layers.ghost, store.placingFurniture ? ghost : null, viewport)
+        app.canvas.style.cursor = store.placing || store.placingFurniture ? 'crosshair' : 'default'
         drawGuides(layers.guides, guides, viewport, app.screen.width, app.screen.height)
         const selectedRoom = selectedId
           ? store.plan.rooms.find((r) => r.id === selectedId)
