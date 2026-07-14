@@ -878,7 +878,7 @@ describe('furniture actions', () => {
   })
 
   it('setApartment re-clamps stranded floor items', () => {
-    const id = placeSofa(9, 4)
+    const id = placeSofa(8.5, 4) // valid pre-shrink: right edge 9.6 < 10
     usePlanStore.getState().setApartment({ width: 5 })
     const item = usePlanStore.getState().plan.furniture[0] as FloorItem
     expect(item.position.x).toBeLessThanOrEqual(5 - 1.1)
