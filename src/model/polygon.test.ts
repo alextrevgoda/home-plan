@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { rectToPolygon } from './geometry'
 import {
-  isRectilinear, isSimplePolygon, MIN_EDGE, minEdgeLength,
+  isRectilinear, isSimplePolygon, mergeCollinear, MIN_EDGE, minEdgeLength,
   pointInPolygon, polygonBounds, polygonCentroid, signedPolygonArea, validateRoomPolygon,
 } from './polygon'
 import type { Vec2 } from './types'
@@ -82,5 +82,48 @@ describe('validateRoomPolygon', () => {
     expect(signedPolygonArea(L)).toBeGreaterThan(0)
     expect(signedPolygonArea(reversed)).toBeLessThan(0)
     expect(validateRoomPolygon(reversed)).toBe(false)
+  })
+})
+
+describe('mergeCollinear', () => {
+  it('identity on a canonical rect', () => {
+    const rect = rectToPolygon({ x: 0, y: 0, width: 4, height: 3 })
+    const r = mergeCollinear(rect)
+    expect(r.polygon).toEqual(rect)
+    expect(r.edgeIndexMap).toEqual([0, 1, 2, 3])
+    expect(r.offsetShift).toEqual([0, 0, 0, 0])
+  })
+
+  it('merges a split vertex back into one edge with offset shifts', () => {
+    // rect top edge split at x=1.5: vertices v0(0,0) v1(1.5,0) v2(4,0) v3(4,3) v4(0,3)
+    const split: Vec2[] = [
+      { x: 0, y: 0 }, { x: 1.5, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 },
+    ]
+    const r = mergeCollinear(split)
+    expect(r.polygon).toEqual(rectToPolygon({ x: 0, y: 0, width: 4, height: 3 }))
+    // old edge 0 (v0→v1) → new edge 0, shift 0; old edge 1 (v1→v2) → new edge 0, shift 1.5
+    expect(r.edgeIndexMap[0]).toBe(0)
+    expect(r.edgeIndexMap[1]).toBe(0)
+    expect(r.offsetShift[1]).toBe(1.5)
+    // later edges shift down by one
+    expect(r.edgeIndexMap[2]).toBe(1)
+    expect(r.edgeIndexMap[3]).toBe(2)
+    expect(r.offsetShift[2]).toBe(0)
+  })
+
+  it('handles a removable vertex at index 0 by rotating the start', () => {
+    // same rect but listed starting at the straight-through vertex (1.5, 0)
+    const rotated: Vec2[] = [
+      { x: 1.5, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }, { x: 0, y: 0 },
+    ]
+    const r = mergeCollinear(rotated)
+    expect(r.polygon).toHaveLength(4)
+    expect(r.polygon.map((p) => `${p.x},${p.y}`)).toContain('0,0')
+    // every old edge maps into range and shifts are non-negative
+    for (let i = 0; i < 5; i++) {
+      expect(r.edgeIndexMap[i]).toBeGreaterThanOrEqual(0)
+      expect(r.edgeIndexMap[i]).toBeLessThan(4)
+      expect(r.offsetShift[i]).toBeGreaterThanOrEqual(0)
+    }
   })
 })

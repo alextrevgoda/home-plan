@@ -122,3 +122,49 @@ export function validateRoomPolygon(polygon: Vec2[]): boolean {
     signedPolygonArea(polygon) > 0 // positive = rectToPolygon winding; negative = reversed, rejected
   )
 }
+
+export interface MergeResult {
+  polygon: Vec2[]
+  edgeIndexMap: number[]
+  offsetShift: number[]
+}
+
+export function mergeCollinear(polygon: Vec2[]): MergeResult {
+  const n = polygon.length
+  const keep = polygon.map((_, i) => {
+    const prev = polygon[(i - 1 + n) % n]
+    const cur = polygon[i]
+    const next = polygon[(i + 1) % n]
+    const prevVertical = prev.x === cur.x
+    const nextVertical = cur.x === next.x
+    return prevVertical !== nextVertical // corners stay, straight-throughs go
+  })
+  if (keep.every(Boolean)) {
+    return {
+      polygon: [...polygon],
+      edgeIndexMap: polygon.map((_, i) => i),
+      offsetShift: polygon.map(() => 0),
+    }
+  }
+  const first = keep.findIndex(Boolean)
+  const outVertices: Vec2[] = []
+  const edgeIndexMap = new Array<number>(n)
+  const offsetShift = new Array<number>(n)
+  let newEdge = -1
+  let acc = 0
+  for (let k = 0; k < n; k++) {
+    const oi = (k + first) % n
+    if (keep[oi]) {
+      outVertices.push(polygon[oi])
+      newEdge += 1
+      acc = 0
+    } else {
+      const prev = polygon[(oi - 1 + n) % n]
+      const cur = polygon[oi]
+      acc += Math.hypot(cur.x - prev.x, cur.y - prev.y)
+    }
+    edgeIndexMap[oi] = newEdge
+    offsetShift[oi] = acc
+  }
+  return { polygon: outVertices, edgeIndexMap, offsetShift }
+}
