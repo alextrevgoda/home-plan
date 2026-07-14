@@ -63,6 +63,9 @@ export function drawRooms(container: Container, plan: Plan, selectedId: string |
   const entries = plan.rooms.map((room) => ({ room, bounds: polygonBounds(room.polygon) }))
 
   for (const { room, bounds } of entries) {
+    // Bounding-box approximation: two non-convex (e.g. L-shaped) rooms whose boxes overlap but
+    // whose actual polygons don't may false-positive here. Deliberate — this is a warning-only
+    // heuristic, not a correctness gate, so we accept the occasional over-eager flag.
     const overlapping = entries.some(
       (other) => other.room.id !== room.id && rectsOverlap(bounds, other.bounds),
     )

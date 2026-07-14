@@ -237,6 +237,79 @@ describe('split → push → merge round-trip', () => {
   })
 })
 
+describe('pushRoomEdge — prev-parallel connector stays out of the pushed edge (regression, C1)', () => {
+  it('keeps the pushed edge at its original index across a two-step drag (prev-parallel only)', () => {
+    // rect 4×3, split the top edge at t=2 → [(0,0),(2,0),(4,0),(4,3),(0,3)], edge1 = (2,0)-(4,0)
+    const p = planWith(room(rectToPolygon({ x: 0, y: 0, width: 4, height: 3 })))
+    const split = splitRoomEdge(p, 'r1', 0, 2)!
+    // push edge 1 (prev neighbor — edge0 — is parallel/collinear with it pre-push): first move
+    const first = pushRoomEdge(split, 'r1', 1, 0.5)!
+    expect(first.rooms[0].polygon).toEqual([
+      { x: 2, y: 0 }, { x: 2, y: 0.5 }, { x: 4, y: 0.5 }, { x: 4, y: 3 }, { x: 0, y: 3 }, { x: 0, y: 0 },
+    ])
+    // pushed edge (movedA→movedB, (2,0.5)-(4,0.5)) sits at index 1 — the drag can keep using
+    // edgeIndex 1 for the next pointermove, exactly like the real editor does
+    // second move, same edgeIndex the editor captured at pointerdown
+    const second = pushRoomEdge(first, 'r1', 1, 0.6)!
+    expect(second.rooms[0].polygon).toEqual([
+      { x: 2, y: 0 }, { x: 2, y: 0.6 }, { x: 4, y: 0.6 }, { x: 4, y: 3 }, { x: 0, y: 3 }, { x: 0, y: 0 },
+    ])
+    // a clean notch (rotated to start at (0,0), same cyclic shape as the brief's target)
+    expect(validateRoomPolygon(second.rooms[0].polygon)).toBe(true)
+  })
+
+  it('U-alcove: double split then push the middle segment twice — clean U both times, attachments and a wall item follow it', () => {
+    // 4×3 rect; split the top edge at x=1 and x=3, leaving a middle segment (1,0)-(3,0)
+    const withDoor = planWith(
+      room(rectToPolygon({ x: 0, y: 0, width: 4, height: 3 })),
+      [door(2, 1.5)], // bottom wall (edge 2 of the plain rect), offset 1.5 — should just shift index, not offset
+    )
+    const split1 = splitRoomEdge(withDoor, 'r1', 0, 1)! // → [(0,0),(1,0),(4,0),(4,3),(0,3)]
+    const split2 = splitRoomEdge(split1, 'r1', 1, 2)! // → [(0,0),(1,0),(3,0),(4,0),(4,3),(0,3)], middle = edge1
+    expect(split2.rooms[0].polygon).toEqual([
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 3, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 },
+    ])
+    // bottom-wall door has shifted from edge 2 (original rect) to edge 4 (two inserts before it)
+    expect(split2.openings[0].edgeIndex).toBe(4)
+    expect(split2.openings[0].offset).toBe(1.5)
+
+    // add a wall item mounted on the middle segment (edge 1) after the splits
+    const withArt: Plan = {
+      ...split2,
+      furniture: [{ ...art(1, 0.8) }],
+    }
+
+    // first push: both neighbors are parallel (alcove case) — pushed edge must stay at index 1
+    const push1 = pushRoomEdge(withArt, 'r1', 1, 0.6)!
+    expect(push1.rooms[0].polygon).toEqual([
+      { x: 1, y: 0 }, { x: 1, y: 0.6 }, { x: 3, y: 0.6 }, { x: 3, y: 0 },
+      { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }, { x: 0, y: 0 },
+    ])
+    expect(validateRoomPolygon(push1.rooms[0].polygon)).toBe(true)
+    // pushed edge (movedA→movedB) is (1,0.6)-(3,0.6): indices 1→2, still edge 1
+    const w1 = push1.furniture[0] as WallItem
+    expect(w1.edgeIndex).toBe(1)
+    expect(w1.offset).toBe(0.8)
+    const d1 = push1.openings[0]
+    expect(d1.edgeIndex).toBe(5) // shifted +1 by the next-parallel connector insertion
+    expect(d1.offset).toBe(1.5)
+
+    // second push, same edgeIndex (1) as the real drag would use — deeper alcove, still clean
+    const push2 = pushRoomEdge(push1, 'r1', 1, 0.8)!
+    expect(push2.rooms[0].polygon).toEqual([
+      { x: 1, y: 0 }, { x: 1, y: 0.8 }, { x: 3, y: 0.8 }, { x: 3, y: 0 },
+      { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }, { x: 0, y: 0 },
+    ])
+    expect(validateRoomPolygon(push2.rooms[0].polygon)).toBe(true)
+    const w2 = push2.furniture[0] as WallItem
+    expect(w2.edgeIndex).toBe(1) // wall item still follows the middle segment
+    expect(w2.offset).toBe(0.8)
+    const d2 = push2.openings[0]
+    expect(d2.edgeIndex).toBe(5) // unaffected — both connectors now perpendicular, no new insert
+    expect(d2.offset).toBe(1.5)
+  })
+})
+
 describe('moveRoomVertex', () => {
   it('reproduces rect corner-resize semantics', () => {
     const p = planWith(room(rectToPolygon({ x: 0, y: 0, width: 4, height: 3 })))

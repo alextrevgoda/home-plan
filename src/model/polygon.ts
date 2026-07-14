@@ -258,17 +258,22 @@ export function pushRoomEdge(plan: Plan, roomId: string, edgeIndex: number, coor
   const prevParallel = horizontal ? prevV.y === a.y : prevV.x === a.x
   const nextParallel = horizontal ? nextV.y === b.y : nextV.x === b.x
 
-  const rebuilt: Vec2[] = []
-  if (prevParallel) rebuilt.push(a) // connector vertex (unmoved copy)
-  rebuilt.push(movedA, movedB)
+  // The prev-parallel connector is appended LAST (after all the untouched vertices), not
+  // inserted before movedA. That keeps the pushed edge (movedA→movedB) at work-frame index 0
+  // no matter which neighbors are parallel — a drag that captures edgeIndex once at pointerdown
+  // keeps pushing the same edge on every subsequent move. The unmoved prev-neighbor edge
+  // (work[n-1]→a) becomes the new second-to-last edge (unchanged, as before); the connector
+  // itself (a→movedA) becomes the new last edge — a brand-new edge that never had attachments.
+  const rebuilt: Vec2[] = [movedA, movedB]
   if (nextParallel) rebuilt.push(b) // connector vertex (unmoved copy)
   for (let i = 2; i < n; i++) rebuilt.push(work[i])
+  if (prevParallel) rebuilt.push(a) // connector vertex (unmoved copy), appended last
 
   // index remap for the insertions (before dedupe), expressed in the rotated (work) frame where
-  // the pushed edge is always index 0
-  const insBefore = prevParallel ? 1 : 0
+  // the pushed edge is always index 0. Only the next-parallel insertion (in front of work[2..])
+  // shifts later edges; the prev-parallel insertion sits at the tail and shifts nothing.
   const insAfter = nextParallel ? 1 : 0
-  const afterInsert = (workOld: number): number => (workOld === 0 ? insBefore : workOld + insBefore + insAfter)
+  const afterInsert = (workOld: number): number => (workOld === 0 ? 0 : workOld + insAfter)
 
   // a flush push collapses a connector to zero length — dedupe consecutive equal vertices,
   // remapping edges that collapse onto the following edge (offset clamps to that edge)

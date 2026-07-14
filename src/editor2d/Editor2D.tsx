@@ -122,6 +122,11 @@ export function Editor2D() {
         | { kind: 'moveWallItem'; itemId: string }
         | { kind: 'rotateFurniture'; itemId: string; start: { position: Vec2; rotation: number } }
       let drag: DragState = { kind: 'idle' }
+      // Tracks whether the current pushEdge/moveVertex drag has actually mutated the plan (as
+      // opposed to every push being rejected below the engage threshold, or a zero-movement
+      // handle click). endInteraction only merges collinear vertices when this is true — otherwise
+      // a no-op drag would silently discard a pending split (see finding I1).
+      let dragMutated = false
       let hoverEdge: EdgeHit | null = null
       let ghost: FurnitureGhost | null = null
       let guides: SnapGuide[] = []
@@ -246,6 +251,7 @@ export function Editor2D() {
         if (selectedRoom) {
           const handle = hitPolygonHandle(selectedRoom, viewport, screen)
           if (handle) {
+            dragMutated = false
             drag =
               handle.kind === 'edge'
                 ? {
@@ -342,7 +348,9 @@ export function Editor2D() {
             coordinate = snapped.value
             if (snapped.guide !== null) guides.push({ axis: activeDrag.horizontal ? 'y' : 'x', position: snapped.guide })
           }
+          const before = store.plan
           store.pushRoomEdge(activeDrag.roomId, activeDrag.edgeIndex, roundCm(coordinate))
+          if (usePlanStore.getState().plan !== before) dragMutated = true
           markDirty()
         }
 
@@ -360,7 +368,9 @@ export function Editor2D() {
             if (sx.guide !== null) guides.push({ axis: 'x', position: sx.guide })
             if (sy.guide !== null) guides.push({ axis: 'y', position: sy.guide })
           }
+          const before = store.plan
           store.moveRoomVertex(activeDrag.roomId, activeDrag.vertexIndex, point)
+          if (usePlanStore.getState().plan !== before) dragMutated = true
           markDirty()
         }
 
@@ -427,11 +437,12 @@ export function Editor2D() {
       const endInteraction = (e?: FederatedPointerEvent) => {
         panning = null
         revertDragIfColliding()
-        if (drag.kind === 'pushEdge' || drag.kind === 'moveVertex') {
+        if ((drag.kind === 'pushEdge' || drag.kind === 'moveVertex') && dragMutated) {
           usePlanStore.getState().mergeRoomCollinear(drag.roomId)
         }
         if (drag.kind !== 'idle' || guides.length > 0) {
           drag = { kind: 'idle' }
+          dragMutated = false
           guides = []
           markDirty()
         }
@@ -486,6 +497,7 @@ export function Editor2D() {
           if (drag.kind !== 'idle') {
             revertDragIfColliding()
             drag = { kind: 'idle' }
+            dragMutated = false
             guides = []
           }
           const store = usePlanStore.getState()
