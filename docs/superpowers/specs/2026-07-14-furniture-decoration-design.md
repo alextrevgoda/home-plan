@@ -114,6 +114,9 @@ Selection extends to `{ kind: 'room' | 'opening' | 'furniture', id }`.
 - Store remains the single writer: all placement/edit actions round to cm,
   clamp, and validate before committing.
 
+Floor-finish textures ship as tileable 1K JPEGs (not KTX2 — plain textures
+tile reliably with world-scale repeat wrapping and stay small).
+
 ## Catalog contents & assets
 
 Initial catalog (curated to what good CC0 models exist; count approximate):
@@ -131,9 +134,11 @@ Asset pipeline (one-time preprocessing, results committed to the repo):
 - Source: CC0 libraries with realistic-leaning models (Poly Haven and similar);
   per-file attribution recorded in `public/models/CREDITS.md`
 - `gltf-transform`: meshopt compression, textures ≤ 1K KTX2, target ≤ ~1.5 MB
-  per GLB
-- Normalized orientation (front faces −Y in plan coordinates) and origin at the
-  footprint center on the floor plane
+  per GLB (hard cap 2 MB)
+- Orientation convention: model front faces +Z; per-model corrections are
+  recorded as a catalog-level rotation rather than baked into the file.
+  Origin/size normalization (footprint center on the floor plane) happens at
+  load time from the model's bounding box
 - Meshopt/KTX2 decoder wasm ships with the app — no CDN dependency
 - If no acceptable CC0 model exists for an item, the item is dropped from the
   catalog rather than shipped as a placeholder
