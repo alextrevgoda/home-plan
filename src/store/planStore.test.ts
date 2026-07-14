@@ -223,6 +223,10 @@ describe('furniture actions', () => {
     expect((st().plan.furniture[0] as FloorItem).position.x).toBe(1.1) // half of width 2.2
     st().rotateFurniture(id, -90)
     expect((st().plan.furniture[0] as FloorItem).rotation).toBe(270)
+    st().rotateFurniture(id, 359.97)
+    expect((st().plan.furniture[0] as FloorItem).rotation).toBe(0)
+    st().rotateFurniture(id, -0.02)
+    expect((st().plan.furniture[0] as FloorItem).rotation).toBe(0)
     st().resizeFurniture(id, { width: 99 })
     expect(st().plan.furniture[0].size.width).toBe(2.8)
     st().recolorFurniture(id, '#ff0000')

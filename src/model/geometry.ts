@@ -58,3 +58,10 @@ export function normalizeDeg(d: number): number {
 export function roundDeg(d: number): number {
   return Math.round(d * 10) / 10
 }
+
+// Normalizes, rounds, then normalizes again so the result always lands in
+// [0, 360). The inner normalizeDeg handles negatives before rounding; the
+// outer one folds a rounded 360.0 (from values like 359.97 or -0.02) back to 0.
+export function normalizeRoundDeg(d: number): number {
+  return normalizeDeg(roundDeg(normalizeDeg(d)))
+}

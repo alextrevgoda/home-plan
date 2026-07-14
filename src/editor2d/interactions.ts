@@ -1,4 +1,4 @@
-import { MIN_ROOM_SIZE, normalizeDeg, polygonToRect, roundCm, roundDeg } from '../model/geometry'
+import { MIN_ROOM_SIZE, normalizeRoundDeg, polygonToRect, roundCm } from '../model/geometry'
 import { catalogItem, type Layer } from '../model/catalog'
 import { ROTATION_SNAP_DEG, footprintCorners, pointInConvexPolygon, wallItemSpan } from '../model/furniture'
 import type { FloorItem, Plan, Rect, Room, Vec2 } from '../model/types'
@@ -163,5 +163,5 @@ export function rotationFromPointer(item: FloorItem, viewport: Viewport, screen:
   const c = worldToScreen(viewport, item.position)
   const deg = (Math.atan2(screen.y - c.y, screen.x - c.x) * 180) / Math.PI + 90
   const snapped = snap ? Math.round(deg / ROTATION_SNAP_DEG) * ROTATION_SNAP_DEG : deg
-  return roundDeg(normalizeDeg(snapped))
+  return normalizeRoundDeg(snapped)
 }

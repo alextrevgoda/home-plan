@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { catalogItem, floorFinish } from '../model/catalog'
 import { clampFloorItemPosition, floorItemCollides, floorItemInBounds } from '../model/furniture'
-import { MIN_ROOM_SIZE, normalizeDeg, polygonArea, rectToPolygon, roundCm, roundDeg } from '../model/geometry'
+import { MIN_ROOM_SIZE, normalizeRoundDeg, polygonArea, rectToPolygon, roundCm } from '../model/geometry'
 import { clampOffset, MIN_OPENING_WIDTH, OPENING_DEFAULTS, roomEdge } from '../model/openings'
 import { createDefaultPlan } from '../model/serialization'
 import type {
@@ -276,7 +276,7 @@ export const usePlanStore = create<PlanState>((set) => ({
       let item: PlacedItem
       if (placement.mount === 'floor') {
         if (!Number.isFinite(placement.position.x) || !Number.isFinite(placement.position.y) || !Number.isFinite(placement.rotation)) return s
-        const rotation = roundDeg(normalizeDeg(placement.rotation))
+        const rotation = normalizeRoundDeg(placement.rotation)
         const position = {
           x: roundCm(placement.position.x),
           y: roundCm(placement.position.y),
@@ -315,7 +315,7 @@ export const usePlanStore = create<PlanState>((set) => ({
       if (rotation !== undefined && !Number.isFinite(rotation)) return s
       const item = s.plan.furniture.find((f) => f.id === id)
       if (!item || item.mount !== 'floor') return s
-      const nextRotation = rotation === undefined ? item.rotation : roundDeg(normalizeDeg(rotation))
+      const nextRotation = rotation === undefined ? item.rotation : normalizeRoundDeg(rotation)
       const next: FloorItem = {
         ...item,
         rotation: nextRotation,
@@ -358,7 +358,7 @@ export const usePlanStore = create<PlanState>((set) => ({
       if (!Number.isFinite(rotation)) return s
       const item = s.plan.furniture.find((f) => f.id === id)
       if (!item || item.mount !== 'floor') return s
-      const deg = roundDeg(normalizeDeg(rotation))
+      const deg = normalizeRoundDeg(rotation)
       const next: FloorItem = {
         ...item,
         rotation: deg,

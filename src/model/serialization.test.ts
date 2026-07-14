@@ -218,6 +218,18 @@ describe('v3 furniture', () => {
     expect(item?.size.depth).toBe(0.8) // min depth
   })
 
+  it('normalizes a rotation that rounds to exactly 360 back to 0, idempotently', () => {
+    const plan = { ...createDefaultPlan(), furniture: [{ ...floorItem, rotation: 359.97 }] }
+    const serialized = serializePlan(plan as Plan)
+    const parsed = parsePlan(serialized)
+    const item = parsed?.furniture[0] as FloorItem | undefined
+    expect(item?.rotation).toBe(0)
+
+    // Re-parsing the serialization of the already-normalized plan must be unchanged.
+    const reparsed = parsePlan(serializePlan(parsed as Plan))
+    expect(reparsed).toEqual(parsed)
+  })
+
   it('clamps floor positions into the apartment', () => {
     const plan = { ...createDefaultPlan(), furniture: [{ ...floorItem, position: { x: -50, y: 2 } }] }
     const parsed = parsePlan(serializePlan(plan as Plan))

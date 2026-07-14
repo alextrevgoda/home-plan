@@ -94,6 +94,16 @@ export function Editor2D() {
       cleanups.push(usePlanStore.subscribe(markDirty))
       app.renderer.on('resize', markDirty)
 
+      // `resizeTo` only reacts to window resize events (pixi's ResizePlugin). Layout changes that
+      // resize `host` without resizing the window — e.g. toggling the furniture catalog panel —
+      // need an explicit refit, so observe the host element directly.
+      const resizeObserver = new ResizeObserver(() => {
+        app.resize()
+        markDirty()
+      })
+      resizeObserver.observe(host)
+      cleanups.push(() => resizeObserver.disconnect())
+
       let panning: { lastX: number; lastY: number } | null = null
       let spaceDown = false
 

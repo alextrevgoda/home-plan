@@ -1,5 +1,5 @@
 import { catalogItem } from './catalog'
-import { normalizeDeg, roundCm, roundDeg } from './geometry'
+import { normalizeRoundDeg, roundCm } from './geometry'
 import { projectOntoEdge, roomEdge } from './openings'
 import type { Apartment, FloorItem, Plan, PlacedItem, Room, Size3, Vec2, WallItem } from './types'
 
@@ -171,7 +171,7 @@ export function snapFloorItemToWall(
             x: roundCm(edge.a.x + edge.ux * t + nx * (size.depth / 2)),
             y: roundCm(edge.a.y + edge.uy * t + ny * (size.depth / 2)),
           },
-          rotation: roundDeg(normalizeDeg((Math.atan2(edge.uy, edge.ux) * 180) / Math.PI)),
+          rotation: normalizeRoundDeg((Math.atan2(edge.uy, edge.ux) * 180) / Math.PI),
         }
       }
     }
