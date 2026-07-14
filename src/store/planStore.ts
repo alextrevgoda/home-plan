@@ -1,12 +1,22 @@
 import { create } from 'zustand'
-import { MIN_ROOM_SIZE, polygonArea, rectToPolygon, roundCm } from '../model/geometry'
+import { catalogItem, floorFinish } from '../model/catalog'
+import { clampFloorItemPosition, floorItemCollides, floorItemInBounds } from '../model/furniture'
+import { MIN_ROOM_SIZE, normalizeDeg, polygonArea, rectToPolygon, roundCm, roundDeg } from '../model/geometry'
 import { clampOffset, MIN_OPENING_WIDTH, OPENING_DEFAULTS, roomEdge } from '../model/openings'
 import { createDefaultPlan } from '../model/serialization'
-import type { Apartment, Mode, Opening, OpeningKind, Plan, Rect, Selection } from '../model/types'
+import type {
+  Apartment, FloorItem, Mode, Opening, OpeningKind, PlacedItem, Plan, Rect, Selection, Size3, Vec2, WallItem,
+} from '../model/types'
+
+const HEX = /^#[0-9a-fA-F]{6}$/
 
 const ROOM_COLORS = ['#8ecae6', '#ffb703', '#90be6d', '#f4a7b9', '#bdb2ff', '#f9c74f']
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
+
+export type Placement =
+  | { mount: 'floor'; position: Vec2; rotation: number }
+  | { mount: 'wall'; roomId: string; edgeIndex: number; offset: number }
 
 export interface PlanState {
   plan: Plan
@@ -31,6 +41,21 @@ export interface PlanState {
     patch: Partial<Pick<Opening, 'width' | 'height' | 'sillHeight' | 'offset'>>,
   ) => void
   deleteOpening: (id: string) => void
+  placingFurniture: string | null
+  catalogOpen: boolean
+  setCatalogOpen: (open: boolean) => void
+  setPlacingFurniture: (catalogId: string | null) => void
+  selectFurniture: (id: string) => void
+  placeFurniture: (catalogId: string, placement: Placement) => string
+  moveFloorItem: (id: string, position: Vec2, rotation?: number) => void
+  moveWallItem: (id: string, roomId: string, edgeIndex: number, offset: number) => void
+  updateWallItem: (id: string, patch: Partial<Pick<WallItem, 'offset' | 'elevation'>>) => void
+  rotateFurniture: (id: string, rotation: number) => void
+  resizeFurniture: (id: string, patch: Partial<Size3>) => void
+  recolorFurniture: (id: string, color: string | undefined) => void
+  deleteFurniture: (id: string) => void
+  setRoomFloorMaterial: (roomId: string, materialId: string | undefined) => void
+  setRoomWallColor: (roomId: string, color: string | undefined) => void
 }
 
 export const usePlanStore = create<PlanState>((set) => ({
@@ -56,7 +81,15 @@ export const usePlanStore = create<PlanState>((set) => ({
         depth: roundCm(clamp(a.depth, 1, 100)),
         wallHeight: roundCm(clamp(a.wallHeight, 2, 5)),
       }
-      return { plan: { ...s.plan, apartment } }
+      const furniture = s.plan.furniture.map((f) =>
+        f.mount === 'floor'
+          ? { ...f, position: clampFloorItemPosition(f.position, f.rotation, f.size, apartment) }
+          : {
+              ...f,
+              elevation: roundCm(clamp(f.elevation, 0, Math.max(0, apartment.wallHeight - f.size.height))),
+            },
+      )
+      return { plan: { ...s.plan, apartment, furniture } }
     }),
 
   addRoom: () => {
@@ -102,11 +135,18 @@ export const usePlanStore = create<PlanState>((set) => ({
         if (!edge) return o
         return { ...o, offset: clampOffset(o.offset, o.width, edge.length) }
       })
+      const furniture = s.plan.furniture.map((f) => {
+        if (f.mount !== 'wall' || f.roomId !== id) return f
+        const edge = roomEdge(nextRoom, f.edgeIndex)
+        if (!edge) return f
+        return { ...f, offset: clampOffset(f.offset, f.size.width, edge.length) }
+      })
       return {
         plan: {
           ...s.plan,
           rooms: s.plan.rooms.map((r) => (r.id === id ? nextRoom : r)),
           openings,
+          furniture,
         },
       }
     }),
@@ -126,20 +166,24 @@ export const usePlanStore = create<PlanState>((set) => ({
       const sel = s.selection
       const orphanSelected =
         sel?.kind === 'opening' && s.plan.openings.some((o) => o.id === sel.id && o.roomId === id)
+      const orphanFurnitureSelected =
+        sel?.kind === 'furniture' &&
+        s.plan.furniture.some((f) => f.id === sel.id && f.mount === 'wall' && f.roomId === id)
       const roomSelected = sel?.kind === 'room' && sel.id === id
       return {
         plan: {
           ...s.plan,
           rooms: s.plan.rooms.filter((r) => r.id !== id),
           openings: s.plan.openings.filter((o) => o.roomId !== id),
+          furniture: s.plan.furniture.filter((f) => f.mount !== 'wall' || f.roomId !== id),
         },
-        selection: roomSelected || orphanSelected ? null : s.selection,
+        selection: roomSelected || orphanSelected || orphanFurnitureSelected ? null : s.selection,
       }
     }),
 
-  loadPlan: (plan) => set({ plan, selection: null, placing: null }),
+  loadPlan: (plan) => set({ plan, selection: null, placing: null, placingFurniture: null }),
 
-  setPlacing: (placing) => set({ placing, selection: null }),
+  setPlacing: (placing) => set({ placing, placingFurniture: null, selection: null }),
 
   addOpening: (kind, roomId, edgeIndex, offset) => {
     const id = crypto.randomUUID()
@@ -211,4 +255,181 @@ export const usePlanStore = create<PlanState>((set) => ({
       plan: { ...s.plan, openings: s.plan.openings.filter((o) => o.id !== id) },
       selection: s.selection?.kind === 'opening' && s.selection.id === id ? null : s.selection,
     })),
+
+  placingFurniture: null,
+  catalogOpen: false,
+
+  setCatalogOpen: (catalogOpen) => set({ catalogOpen }),
+
+  setPlacingFurniture: (placingFurniture) =>
+    set({ placingFurniture, placing: null, selection: null }),
+
+  selectFurniture: (id) => set({ selection: { kind: 'furniture', id } }),
+
+  placeFurniture: (catalogId, placement) => {
+    const id = crypto.randomUUID()
+    let created = false
+    set((s) => {
+      const cat = catalogItem(catalogId)
+      if (!cat || cat.mount !== placement.mount) return s
+      const size: Size3 = { ...cat.defaultSize }
+      let item: PlacedItem
+      if (placement.mount === 'floor') {
+        if (!Number.isFinite(placement.position.x) || !Number.isFinite(placement.position.y) || !Number.isFinite(placement.rotation)) return s
+        const rotation = roundDeg(normalizeDeg(placement.rotation))
+        const position = {
+          x: roundCm(placement.position.x),
+          y: roundCm(placement.position.y),
+        }
+        const candidate = { position, rotation, size }
+        if (!floorItemInBounds(candidate, s.plan.apartment)) return s
+        if (cat.layer === 'solid' && floorItemCollides(candidate, s.plan)) return s
+        item = { id, catalogId, mount: 'floor', position, rotation, size }
+      } else {
+        if (!Number.isFinite(placement.offset)) return s
+        const room = s.plan.rooms.find((r) => r.id === placement.roomId)
+        const edge = room ? roomEdge(room, placement.edgeIndex) : null
+        if (!edge) return s
+        const wallHeight = s.plan.apartment.wallHeight
+        item = {
+          id, catalogId, mount: 'wall',
+          roomId: placement.roomId, edgeIndex: placement.edgeIndex,
+          offset: clampOffset(placement.offset, size.width, edge.length),
+          elevation: roundCm(clamp(cat.defaultElevation ?? 1.2, 0, Math.max(0, wallHeight - size.height))),
+          size,
+        }
+      }
+      created = true
+      return {
+        plan: { ...s.plan, furniture: [...s.plan.furniture, item] },
+        selection: { kind: 'furniture', id } as Selection,
+        placingFurniture: null,
+      }
+    })
+    return created ? id : ''
+  },
+
+  moveFloorItem: (id, position, rotation) =>
+    set((s) => {
+      if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return s
+      if (rotation !== undefined && !Number.isFinite(rotation)) return s
+      const item = s.plan.furniture.find((f) => f.id === id)
+      if (!item || item.mount !== 'floor') return s
+      const nextRotation = rotation === undefined ? item.rotation : roundDeg(normalizeDeg(rotation))
+      const next: FloorItem = {
+        ...item,
+        rotation: nextRotation,
+        position: clampFloorItemPosition(position, nextRotation, item.size, s.plan.apartment),
+      }
+      return { plan: { ...s.plan, furniture: s.plan.furniture.map((f) => (f.id === id ? next : f)) } }
+    }),
+
+  moveWallItem: (id, roomId, edgeIndex, offset) =>
+    set((s) => {
+      if (!Number.isFinite(offset)) return s
+      const item = s.plan.furniture.find((f) => f.id === id)
+      if (!item || item.mount !== 'wall') return s
+      const room = s.plan.rooms.find((r) => r.id === roomId)
+      const edge = room ? roomEdge(room, edgeIndex) : null
+      if (!edge) return s
+      const next: WallItem = { ...item, roomId, edgeIndex, offset: clampOffset(offset, item.size.width, edge.length) }
+      return { plan: { ...s.plan, furniture: s.plan.furniture.map((f) => (f.id === id ? next : f)) } }
+    }),
+
+  updateWallItem: (id, patch) =>
+    set((s) => {
+      for (const v of Object.values(patch)) if (v !== undefined && !Number.isFinite(v)) return s
+      const item = s.plan.furniture.find((f) => f.id === id)
+      if (!item || item.mount !== 'wall') return s
+      const room = s.plan.rooms.find((r) => r.id === item.roomId)
+      const edge = room ? roomEdge(room, item.edgeIndex) : null
+      if (!edge) return s
+      const wallHeight = s.plan.apartment.wallHeight
+      const next: WallItem = {
+        ...item,
+        offset: clampOffset(patch.offset ?? item.offset, item.size.width, edge.length),
+        elevation: roundCm(clamp(patch.elevation ?? item.elevation, 0, Math.max(0, wallHeight - item.size.height))),
+      }
+      return { plan: { ...s.plan, furniture: s.plan.furniture.map((f) => (f.id === id ? next : f)) } }
+    }),
+
+  rotateFurniture: (id, rotation) =>
+    set((s) => {
+      if (!Number.isFinite(rotation)) return s
+      const item = s.plan.furniture.find((f) => f.id === id)
+      if (!item || item.mount !== 'floor') return s
+      const deg = roundDeg(normalizeDeg(rotation))
+      const next: FloorItem = {
+        ...item,
+        rotation: deg,
+        position: clampFloorItemPosition(item.position, deg, item.size, s.plan.apartment),
+      }
+      return { plan: { ...s.plan, furniture: s.plan.furniture.map((f) => (f.id === id ? next : f)) } }
+    }),
+
+  resizeFurniture: (id, patch) =>
+    set((s) => {
+      for (const v of Object.values(patch)) if (v !== undefined && !Number.isFinite(v)) return s
+      const item = s.plan.furniture.find((f) => f.id === id)
+      const cat = item ? catalogItem(item.catalogId) : undefined
+      if (!item || !cat) return s
+      const size: Size3 = {
+        width: roundCm(clamp(patch.width ?? item.size.width, cat.sizeBounds.min.width, cat.sizeBounds.max.width)),
+        depth: roundCm(clamp(patch.depth ?? item.size.depth, cat.sizeBounds.min.depth, cat.sizeBounds.max.depth)),
+        height: roundCm(clamp(patch.height ?? item.size.height, cat.sizeBounds.min.height, cat.sizeBounds.max.height)),
+      }
+      let next: PlacedItem
+      if (item.mount === 'floor') {
+        next = { ...item, size, position: clampFloorItemPosition(item.position, item.rotation, size, s.plan.apartment) }
+      } else {
+        const room = s.plan.rooms.find((r) => r.id === item.roomId)
+        const edge = room ? roomEdge(room, item.edgeIndex) : null
+        const wallHeight = s.plan.apartment.wallHeight
+        next = {
+          ...item,
+          size,
+          offset: edge ? clampOffset(item.offset, size.width, edge.length) : item.offset,
+          elevation: roundCm(clamp(item.elevation, 0, Math.max(0, wallHeight - size.height))),
+        }
+      }
+      return { plan: { ...s.plan, furniture: s.plan.furniture.map((f) => (f.id === id ? next : f)) } }
+    }),
+
+  recolorFurniture: (id, color) =>
+    set((s) => {
+      const item = s.plan.furniture.find((f) => f.id === id)
+      const cat = item ? catalogItem(item.catalogId) : undefined
+      if (!item || !cat?.recolorMaterial) return s
+      if (color !== undefined && !HEX.test(color)) return s
+      const next = { ...item, color }
+      return { plan: { ...s.plan, furniture: s.plan.furniture.map((f) => (f.id === id ? next : f)) } }
+    }),
+
+  deleteFurniture: (id) =>
+    set((s) => ({
+      plan: { ...s.plan, furniture: s.plan.furniture.filter((f) => f.id !== id) },
+      selection: s.selection?.kind === 'furniture' && s.selection.id === id ? null : s.selection,
+    })),
+
+  setRoomFloorMaterial: (roomId, materialId) =>
+    set((s) => {
+      if (materialId !== undefined && !floorFinish(materialId)) return s
+      return {
+        plan: {
+          ...s.plan,
+          rooms: s.plan.rooms.map((r) => (r.id === roomId ? { ...r, floorMaterial: materialId } : r)),
+        },
+      }
+    }),
+
+  setRoomWallColor: (roomId, color) =>
+    set((s) => {
+      if (color !== undefined && !HEX.test(color)) return s
+      return {
+        plan: {
+          ...s.plan,
+          rooms: s.plan.rooms.map((r) => (r.id === roomId ? { ...r, wallColor: color } : r)),
+        },
+      }
+    }),
 }))

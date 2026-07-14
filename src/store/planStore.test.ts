@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { catalogItem } from '../model/catalog'
 import { polygonToRect } from '../model/geometry'
 import { createDefaultPlan } from '../model/serialization'
+import type { FloorItem, WallItem } from '../model/types'
 import { usePlanStore } from './planStore'
 
 beforeEach(() => {
@@ -183,5 +185,108 @@ describe('openings', () => {
     const s = usePlanStore.getState()
     expect(s.plan.openings).toHaveLength(0)
     expect(s.selection).toBeNull()
+  })
+})
+
+const placeSofa = (x: number, y: number, rotation = 0) =>
+  usePlanStore.getState().placeFurniture('sofa-3seat', { mount: 'floor', position: { x, y }, rotation })
+
+describe('furniture actions', () => {
+  it('places a floor item with defaults and selects it', () => {
+    const id = placeSofa(5, 4)
+    const s = usePlanStore.getState()
+    expect(id).not.toBe('')
+    const item = s.plan.furniture[0]
+    expect(item).toMatchObject({ catalogId: 'sofa-3seat', mount: 'floor', rotation: 0 })
+    expect(item.size).toEqual(catalogItem('sofa-3seat')!.defaultSize)
+    expect(s.selection).toEqual({ kind: 'furniture', id })
+    expect(s.placingFurniture).toBeNull()
+  })
+
+  it('rejects colliding and out-of-bounds placements', () => {
+    expect(placeSofa(5, 4)).not.toBe('')
+    expect(placeSofa(5.5, 4)).toBe('') // overlaps the first sofa
+    expect(placeSofa(0.2, 4)).toBe('') // footprint outside the apartment
+    expect(usePlanStore.getState().plan.furniture).toHaveLength(1)
+  })
+
+  it('places rugs on top of solids (underlay exempt from collision)', () => {
+    expect(placeSofa(5, 4)).not.toBe('')
+    const rugId = usePlanStore.getState().placeFurniture('rug-rect', { mount: 'floor', position: { x: 5, y: 4 }, rotation: 0 })
+    expect(rugId).not.toBe('')
+  })
+
+  it('moves with clamping, rotates normalized, resizes within bounds', () => {
+    const id = placeSofa(5, 4)
+    const st = () => usePlanStore.getState()
+    st().moveFloorItem(id, { x: -10, y: 4 })
+    expect((st().plan.furniture[0] as FloorItem).position.x).toBe(1.1) // half of width 2.2
+    st().rotateFurniture(id, -90)
+    expect((st().plan.furniture[0] as FloorItem).rotation).toBe(270)
+    st().resizeFurniture(id, { width: 99 })
+    expect(st().plan.furniture[0].size.width).toBe(2.8)
+    st().recolorFurniture(id, '#ff0000')
+    // sofa has no recolorMaterial until Task 11 → color must NOT be set
+    expect(st().plan.furniture[0].color).toBeUndefined()
+    st().deleteFurniture(id)
+    expect(st().plan.furniture).toHaveLength(0)
+    expect(st().selection).toBeNull()
+  })
+
+  it('places, slides and updates wall items; deleteRoom cascades', () => {
+    const st = () => usePlanStore.getState()
+    const roomId = st().addRoom()
+    const artId = st().placeFurniture('wall-art', { mount: 'wall', roomId, edgeIndex: 0, offset: 1 })
+    expect(artId).not.toBe('')
+    const art = () => st().plan.furniture.find((f) => f.id === artId) as WallItem
+    expect(art().elevation).toBe(1.4)
+    st().moveWallItem(artId, roomId, 1, 0)
+    expect(art().edgeIndex).toBe(1)
+    expect(art().offset).toBe(0.4) // clamped to width/2
+    st().updateWallItem(artId, { elevation: 99 })
+    expect(art().elevation).toBe(2.7 - 0.6) // wallHeight − item height
+    st().deleteRoom(roomId)
+    expect(st().plan.furniture).toHaveLength(0)
+  })
+
+  it('setApartment re-clamps stranded floor items', () => {
+    // NOTE: brief specified placeSofa(9, 4), but the default apartment is 10m wide and the
+    // sofa is 2.2m wide (half-width 1.1m), so a center at x=9 puts the right edge at 10.1m —
+    // 0.1m outside the 10m apartment, which placeFurniture correctly rejects (see
+    // "rejects colliding and out-of-bounds placements" above, same bounds check). Using 8.5
+    // keeps the item validly placed pre-shrink while still landing outside the 5m apartment
+    // afterward, preserving the test's intent.
+    const id = placeSofa(8.5, 4)
+    expect(id).not.toBe('')
+    usePlanStore.getState().setApartment({ width: 5 })
+    const item = usePlanStore.getState().plan.furniture[0] as FloorItem
+    expect(item.position.x).toBeLessThanOrEqual(5 - 1.1)
+  })
+
+  it('room finishes validate', () => {
+    const st = () => usePlanStore.getState()
+    const roomId = st().addRoom()
+    st().setRoomFloorMaterial(roomId, 'oak')
+    st().setRoomWallColor(roomId, '#aabbcc')
+    let room = st().plan.rooms[0]
+    expect(room.floorMaterial).toBe('oak')
+    expect(room.wallColor).toBe('#aabbcc')
+    st().setRoomFloorMaterial(roomId, 'nope')
+    st().setRoomWallColor(roomId, 'red')
+    room = st().plan.rooms[0]
+    expect(room.floorMaterial).toBe('oak') // unchanged
+    expect(room.wallColor).toBe('#aabbcc')
+    st().setRoomFloorMaterial(roomId, undefined)
+    expect(st().plan.rooms[0].floorMaterial).toBeUndefined()
+  })
+
+  it('placing modes are mutually exclusive', () => {
+    const st = () => usePlanStore.getState()
+    st().setPlacing('door')
+    st().setPlacingFurniture('sofa-3seat')
+    expect(st().placing).toBeNull()
+    expect(st().placingFurniture).toBe('sofa-3seat')
+    st().setPlacing('window')
+    expect(st().placingFurniture).toBeNull()
   })
 })
