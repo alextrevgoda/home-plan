@@ -8,5 +8,8 @@ export default defineConfig(({ command }) => ({
   test: {
     environment: 'jsdom',
     setupFiles: './src/test-setup.ts',
+    // agent worktrees live under .claude/worktrees/ inside the repo; without
+    // this exclude their copied test files run (and fail) in the parent suite
+    exclude: ['**/node_modules/**', '**/.claude/**', '**/dist/**'],
   },
 }))
