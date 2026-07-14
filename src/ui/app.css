@@ -64,6 +64,11 @@ html, body, #root { height: 100%; margin: 0; font-family: system-ui, sans-serif;
   outline: 2px solid #1d4ed8;
 }
 
+.swatches { display: flex; gap: 4px; flex-wrap: wrap; }
+.swatches .swatch { width: 22px; height: 22px; padding: 0; border: 1px solid #b9bec6; }
+.swatches .active { outline: 2px solid #1d4ed8; }
+.color-row { display: flex; gap: 6px; align-items: center; }
+
 .toast {
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
   background: #1f2430; color: #fff; padding: 10px 16px; border-radius: 8px; z-index: 10;
