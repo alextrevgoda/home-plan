@@ -330,8 +330,10 @@ export function Editor2D() {
         }
       })
 
-      const endInteraction = () => {
-        panning = null
+      // If the in-progress drag left a solid floor item colliding with another solid, snap it
+      // back to where the drag started. Shared by the normal pointerup end-of-drag path and the
+      // Escape-to-cancel path, so a colliding position never survives the end of an interaction.
+      const revertDragIfColliding = () => {
         if (drag.kind === 'moveFloorItem') {
           const activeDrag = drag
           const store = usePlanStore.getState()
@@ -340,6 +342,11 @@ export function Editor2D() {
             store.moveFloorItem(item.id, activeDrag.start.position, activeDrag.start.rotation)
           }
         }
+      }
+
+      const endInteraction = () => {
+        panning = null
+        revertDragIfColliding()
         if (drag.kind !== 'idle' || guides.length > 0) {
           drag = { kind: 'idle' }
           guides = []
@@ -376,6 +383,7 @@ export function Editor2D() {
         }
         if (ev.key === 'Escape' && !isTypingTarget(ev)) {
           if (drag.kind !== 'idle') {
+            revertDragIfColliding()
             drag = { kind: 'idle' }
             guides = []
           }
