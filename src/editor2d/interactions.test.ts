@@ -10,7 +10,10 @@ import {
   hitHandle,
   hitOpening,
   hitRoom,
+  hitRotationHandle,
   nearestEdge,
+  rotationFromPointer,
+  rotationHandleScreen,
 } from './interactions'
 
 const roomAt = (x: number, y: number, w: number, h: number, id: string): Room => ({
@@ -150,5 +153,32 @@ describe('hitFurniture', () => {
     const rotated = { ...plan, furniture: [{ ...sofa, rotation: 90 }] }
     expect(hitFurniture(rotated, viewport, { x: 200, y: 290 })).toBe('sofa') // depth now along x
     expect(hitFurniture(rotated, viewport, { x: 290, y: 200 })).toBeNull()
+  })
+})
+
+describe('rotation handle', () => {
+  const viewport = { scale: 100, offsetX: 0, offsetY: 0 }
+  const item: FloorItem = { id: 'a', catalogId: 'sofa-3seat', mount: 'floor',
+    position: { x: 2, y: 2 }, rotation: 0, size: { width: 2, depth: 1, height: 0.8 } }
+
+  it('sits 24px above the footprint top at rotation 0', () => {
+    expect(rotationHandleScreen(item, viewport)).toEqual({ x: 200, y: 150 - 24 })
+  })
+  it('rotates with the item', () => {
+    const p = rotationHandleScreen({ ...item, rotation: 90 }, viewport)
+    expect(p.x).toBeCloseTo(200 + 50 + 24)
+    expect(p.y).toBeCloseTo(200)
+  })
+  it('hit within 9px', () => {
+    expect(hitRotationHandle(item, viewport, { x: 202, y: 128 })).toBe(true)
+    expect(hitRotationHandle(item, viewport, { x: 220, y: 128 })).toBe(false)
+  })
+  it('pointer angle → rotation, snapped and free', () => {
+    expect(rotationFromPointer(item, viewport, { x: 200, y: 100 }, true)).toBe(0)
+    expect(rotationFromPointer(item, viewport, { x: 300, y: 200 }, true)).toBe(90)
+    expect(rotationFromPointer(item, viewport, { x: 300, y: 208 }, true)).toBe(90) // snaps
+    const free = rotationFromPointer(item, viewport, { x: 300, y: 208 }, false)
+    expect(free).toBeGreaterThan(90)
+    expect(free).toBeLessThan(95)
   })
 })

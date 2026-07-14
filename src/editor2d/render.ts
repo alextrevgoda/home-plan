@@ -4,8 +4,8 @@ import { polygonToRect, rectInBounds, rectsOverlap } from '../model/geometry'
 import { collidingFurnitureIds, wallItemSpan } from '../model/furniture'
 import { openingSpan, openingWarnings, roomEdge } from '../model/openings'
 import type { SnapGuide } from '../model/snapping'
-import type { Apartment, PlacedItem, Plan, Rect, Selection, Vec2 } from '../model/types'
-import { handlePositions } from './interactions'
+import type { Apartment, FloorItem, PlacedItem, Plan, Rect, Selection, Vec2 } from '../model/types'
+import { handlePositions, rotationHandleScreen } from './interactions'
 import type { EdgeHit } from './interactions'
 import { symbolPaths, type SymbolCmd } from './symbols'
 import { screenToWorld, worldToScreen, type Viewport } from './viewport'
@@ -274,4 +274,18 @@ export function drawFurnitureGhost(g: Graphics, ghost: FurnitureGhost | null, vi
   g.rect(-w / 2, -h / 2, w, h).fill({ color, alpha: 0.12 })
   paintSymbol(g, cmds)
   g.stroke({ width: 1.5, color, alpha: 0.8 })
+}
+
+export function drawRotationHandle(g: Graphics, item: FloorItem | null, viewport: Viewport) {
+  g.clear()
+  if (!item) return
+  const t = (item.rotation * Math.PI) / 180
+  const dir = { x: Math.sin(t), y: -Math.cos(t) }
+  const top = worldToScreen(viewport, {
+    x: item.position.x + dir.x * (item.size.depth / 2),
+    y: item.position.y + dir.y * (item.size.depth / 2),
+  })
+  const p = rotationHandleScreen(item, viewport)
+  g.moveTo(top.x, top.y).lineTo(p.x, p.y).stroke({ width: 1.5, color: 0x1d4ed8 })
+  g.circle(p.x, p.y, 6).fill({ color: 0xffffff }).stroke({ width: 1.5, color: 0x1d4ed8 })
 }

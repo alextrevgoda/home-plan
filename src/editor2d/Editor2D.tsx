@@ -14,7 +14,9 @@ import {
   hitHandle,
   hitOpening,
   hitRoom,
+  hitRotationHandle,
   nearestEdge,
+  rotationFromPointer,
   type EdgeHit,
   type HandleId,
 } from './interactions'
@@ -28,6 +30,7 @@ import {
   drawHandles,
   drawOpenings,
   drawRooms,
+  drawRotationHandle,
   type FurnitureGhost,
 } from './render'
 import { fitApartment, screenToWorld, zoomAt, type Viewport } from './viewport'
@@ -63,6 +66,7 @@ export function Editor2D() {
         ghost: new Graphics(),
         guides: new Graphics(),
         handles: new Graphics(),
+        furnitureHandles: new Graphics(),
       }
       app.stage.addChild(
         layers.grid,
@@ -74,6 +78,7 @@ export function Editor2D() {
         layers.ghost,
         layers.guides,
         layers.handles,
+        layers.furnitureHandles,
       )
 
       let viewport: Viewport = fitApartment(
@@ -99,11 +104,13 @@ export function Editor2D() {
         | { kind: 'moveOpening'; openingId: string }
         | { kind: 'moveFloorItem'; itemId: string; grabOffset: Vec2; start: { position: Vec2; rotation: number } }
         | { kind: 'moveWallItem'; itemId: string }
+        | { kind: 'rotateFurniture'; itemId: string; start: { position: Vec2; rotation: number } }
       let drag: DragState = { kind: 'idle' }
       let hoverEdge: EdgeHit | null = null
       let ghost: FurnitureGhost | null = null
       let guides: SnapGuide[] = []
       let altDown = false
+      let shiftDown = false
 
       const snapOpts = (): SnapOptions => ({
         gridStep: 0.1,
@@ -157,6 +164,20 @@ export function Editor2D() {
             }
           }
           markDirty()
+          return
+        }
+
+        // rotation handle floats above everything — it wins over all other hit targets
+        const selFurniture =
+          store.selection?.kind === 'furniture'
+            ? store.plan.furniture.find((f) => f.id === store.selection!.id)
+            : undefined
+        if (selFurniture?.mount === 'floor' && hitRotationHandle(selFurniture, viewport, screen)) {
+          drag = {
+            kind: 'rotateFurniture',
+            itemId: selFurniture.id,
+            start: { position: selFurniture.position, rotation: selFurniture.rotation },
+          }
           return
         }
 
@@ -328,13 +349,25 @@ export function Editor2D() {
           if (hit) store.moveWallItem(activeDrag.itemId, hit.roomId, hit.edgeIndex, hit.offset)
           markDirty()
         }
+
+        if (drag.kind === 'rotateFurniture') {
+          const activeDrag = drag
+          const store = usePlanStore.getState()
+          const item = store.plan.furniture.find((f) => f.id === activeDrag.itemId)
+          if (!item || item.mount !== 'floor') return
+          store.rotateFurniture(
+            activeDrag.itemId,
+            rotationFromPointer(item, viewport, { x: e.global.x, y: e.global.y }, !shiftDown),
+          )
+          markDirty()
+        }
       })
 
       // If the in-progress drag left a solid floor item colliding with another solid, snap it
       // back to where the drag started. Shared by the normal pointerup end-of-drag path and the
       // Escape-to-cancel path, so a colliding position never survives the end of an interaction.
       const revertDragIfColliding = () => {
-        if (drag.kind === 'moveFloorItem') {
+        if (drag.kind === 'moveFloorItem' || drag.kind === 'rotateFurniture') {
           const activeDrag = drag
           const store = usePlanStore.getState()
           const item = store.plan.furniture.find((f) => f.id === activeDrag.itemId)
@@ -374,6 +407,7 @@ export function Editor2D() {
 
       const onKeyDown = (ev: KeyboardEvent) => {
         altDown = ev.altKey
+        shiftDown = ev.shiftKey
         if ((ev.key === 'Delete' || ev.key === 'Backspace') && !isTypingTarget(ev)) {
           const store = usePlanStore.getState()
           if (store.selection?.kind === 'opening') store.deleteOpening(store.selection.id)
@@ -404,6 +438,7 @@ export function Editor2D() {
       }
       const onKeyUp = (ev: KeyboardEvent) => {
         altDown = ev.altKey
+        shiftDown = ev.shiftKey
         if (ev.code === 'Space') spaceDown = false
       }
       window.addEventListener('keydown', onKeyDown)
@@ -437,6 +472,11 @@ export function Editor2D() {
           ? store.plan.rooms.find((r) => r.id === selectedId)
           : undefined
         drawHandles(layers.handles, selectedRoom ? polygonToRect(selectedRoom.polygon) : null, viewport)
+        const selectedFurnitureItem =
+          sel?.kind === 'furniture' ? store.plan.furniture.find((f) => f.id === sel.id) : undefined
+        const selectedFloorItem =
+          selectedFurnitureItem && selectedFurnitureItem.mount === 'floor' ? selectedFurnitureItem : null
+        drawRotationHandle(layers.furnitureHandles, selectedFloorItem, viewport)
       })
     })
     .catch(() => {
