@@ -59,9 +59,11 @@ export function roundDeg(d: number): number {
   return Math.round(d * 10) / 10
 }
 
-// Normalizes, rounds, then normalizes again so the result always lands in
-// [0, 360). The inner normalizeDeg handles negatives before rounding; the
-// outer one folds a rounded 360.0 (from values like 359.97 or -0.02) back to 0.
+// Normalizes then rounds, folding the one boundary case (values like 359.97 or
+// -0.02 that round up to exactly 360) back to 0 so the result always lands in
+// [0, 360). Rounding happens LAST: running normalizeDeg's modulo arithmetic on
+// an already-rounded value would reintroduce float noise (e.g. 2.3 → 2.3000…114).
 export function normalizeRoundDeg(d: number): number {
-  return normalizeDeg(roundDeg(normalizeDeg(d)))
+  const r = roundDeg(normalizeDeg(d))
+  return r === 360 ? 0 : r
 }

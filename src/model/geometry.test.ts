@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MIN_ROOM_SIZE,
+  normalizeRoundDeg,
   polygonArea,
   polygonToRect,
   rectInBounds,
@@ -14,6 +15,23 @@ describe('roundCm', () => {
     expect(roundCm(1.2345)).toBe(1.23)
     expect(roundCm(1.239)).toBe(1.24)
     expect(roundCm(2)).toBe(2)
+  })
+})
+
+describe('normalizeRoundDeg', () => {
+  it('lands in [0, 360) even when rounding hits the boundary', () => {
+    expect(normalizeRoundDeg(359.97)).toBe(0)
+    expect(normalizeRoundDeg(-0.02)).toBe(0)
+    expect(normalizeRoundDeg(360)).toBe(0)
+    expect(normalizeRoundDeg(-90)).toBe(270)
+  })
+
+  it('returns exact 0.1-degree values without float noise', () => {
+    // Rounding must happen last: normalizeDeg's modulo arithmetic on an
+    // already-rounded value would return e.g. 2.3000000000000114.
+    expect(normalizeRoundDeg(2.3)).toBe(2.3)
+    expect(normalizeRoundDeg(359.9)).toBe(359.9)
+    expect(normalizeRoundDeg(362.3)).toBe(2.3)
   })
 })
 

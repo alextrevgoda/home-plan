@@ -227,6 +227,8 @@ describe('furniture actions', () => {
     expect((st().plan.furniture[0] as FloorItem).rotation).toBe(0)
     st().rotateFurniture(id, -0.02)
     expect((st().plan.furniture[0] as FloorItem).rotation).toBe(0)
+    st().rotateFurniture(id, 2.3)
+    expect((st().plan.furniture[0] as FloorItem).rotation).toBe(2.3) // exact, no float noise
     st().resizeFurniture(id, { width: 99 })
     expect(st().plan.furniture[0].size.width).toBe(2.8)
     st().recolorFurniture(id, '#ff0000')
