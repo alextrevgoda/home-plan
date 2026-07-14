@@ -4,6 +4,7 @@ import { DoubleSide } from 'three'
 import { polygonToRect } from '../model/geometry'
 import type { Opening, Plan, Room } from '../model/types'
 import { usePlanStore } from '../store/planStore'
+import { PlanFurniture } from './PlanFurniture'
 import { fillForOpening, wallSegmentsForRoom } from './walls'
 
 export function Viewer3D() {
@@ -33,6 +34,7 @@ export function Viewer3D() {
         {plan.openings.map((opening) => (
           <OpeningFillMesh key={opening.id} opening={opening} plan={plan} />
         ))}
+        <PlanFurniture plan={plan} />
       </group>
 
       <OrbitControls maxPolarAngle={Math.PI / 2 - 0.05} minDistance={2} maxDistance={80} />
