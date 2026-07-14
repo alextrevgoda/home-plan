@@ -165,3 +165,9 @@ export function rotationFromPointer(item: FloorItem, viewport: Viewport, screen:
   const snapped = snap ? Math.round(deg / ROTATION_SNAP_DEG) * ROTATION_SNAP_DEG : deg
   return normalizeRoundDeg(snapped)
 }
+
+// Finger contact patches are much larger than a mouse cursor, so every screen-space
+// hit-test doubles its radius when the interacting pointer is a touch.
+export function hitRadius(base: number, pointerType?: string): number {
+  return pointerType === 'touch' ? base * 2 : base
+}
