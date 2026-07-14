@@ -21,6 +21,8 @@ export interface Room {
   name: string
   polygon: Vec2[]
   color: string
+  floorMaterial?: string
+  wallColor?: string
 }
 
 export type OpeningKind = 'door' | 'window'
@@ -36,17 +38,48 @@ export interface Opening {
   sillHeight: number // doors: always 0
 }
 
+export interface Size3 {
+  width: number
+  depth: number
+  height: number
+}
+
+export interface FloorItem {
+  id: string
+  catalogId: string
+  mount: 'floor'
+  position: Vec2
+  rotation: number
+  size: Size3
+  color?: string
+}
+
+export interface WallItem {
+  id: string
+  catalogId: string
+  mount: 'wall'
+  roomId: string
+  edgeIndex: number
+  offset: number
+  elevation: number
+  size: Size3
+  color?: string
+}
+
+export type PlacedItem = FloorItem | WallItem
+
 export interface Plan {
-  version: 2
+  version: 3
   id: string
   name: string
   apartment: Apartment
   rooms: Room[]
   openings: Opening[]
+  furniture: PlacedItem[]
 }
 
 export interface Selection {
-  kind: 'room' | 'opening'
+  kind: 'room' | 'opening' | 'furniture'
   id: string
 }
 

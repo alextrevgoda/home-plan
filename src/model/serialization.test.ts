@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { rectToPolygon } from './geometry'
 import { createDefaultPlan, parsePlan, planSchema, serializePlan } from './serialization'
+import type { FloorItem, Plan } from './types'
 
 describe('createDefaultPlan', () => {
-  it('creates a valid empty v2 plan with spec defaults', () => {
+  it('creates a valid empty v3 plan with spec defaults', () => {
     const plan = createDefaultPlan()
-    expect(plan.version).toBe(2)
+    expect(plan.version).toBe(3)
     expect(plan.apartment).toEqual({ width: 10, depth: 8, wallHeight: 2.7 })
     expect(plan.rooms).toEqual([])
     expect(plan.openings).toEqual([])
+    expect(plan.furniture).toEqual([])
     expect(plan.id).not.toBe('')
   })
 })
@@ -30,7 +32,7 @@ describe('serializePlan / parsePlan', () => {
   })
 
   it('rejects unknown schema version', () => {
-    const plan = { ...createDefaultPlan(), version: 3 }
+    const plan = { ...createDefaultPlan(), version: 4 }
     expect(parsePlan(JSON.stringify(plan))).toBeNull()
   })
 
@@ -92,8 +94,9 @@ describe('serializePlan / parsePlan', () => {
     delete v1.openings
     const parsed = parsePlan(JSON.stringify(v1))
     expect(parsed).not.toBeNull()
-    expect(parsed!.version).toBe(2)
+    expect(parsed!.version).toBe(3)
     expect(parsed!.openings).toEqual([])
+    expect(parsed!.furniture).toEqual([])
   })
 
   it('rejects an opening referencing an unknown room', () => {
@@ -149,5 +152,76 @@ describe('serializePlan / parsePlan', () => {
       }
       expect(planSchema.safeParse(plan).success).toBe(false)
     }
+  })
+})
+
+describe('v3 furniture', () => {
+  const floorItem = {
+    id: 'f1', catalogId: 'sofa-3seat', mount: 'floor',
+    position: { x: 2, y: 2 }, rotation: 90, size: { width: 2.2, depth: 0.95, height: 0.85 },
+  }
+
+  it('migrates v2 to v3 by adding empty furniture', () => {
+    const v2 = { ...createDefaultPlan(), version: 2 } as unknown as Record<string, unknown>
+    delete v2.furniture
+    const plan = parsePlan(JSON.stringify(v2))
+    expect(plan?.version).toBe(3)
+    expect(plan?.furniture).toEqual([])
+  })
+
+  it('migrates v1 all the way to v3', () => {
+    const v1 = { ...createDefaultPlan(), version: 1 } as unknown as Record<string, unknown>
+    delete v1.openings
+    delete v1.furniture
+    const plan = parsePlan(JSON.stringify(v1))
+    expect(plan?.version).toBe(3)
+    expect(plan?.openings).toEqual([])
+    expect(plan?.furniture).toEqual([])
+  })
+
+  it('round-trips a valid floor item', () => {
+    const plan = { ...createDefaultPlan(), furniture: [floorItem] }
+    expect(parsePlan(serializePlan(plan as Plan))?.furniture).toHaveLength(1)
+  })
+
+  it('rejects unknown catalogId', () => {
+    const plan = { ...createDefaultPlan(), furniture: [{ ...floorItem, catalogId: 'nope' }] }
+    expect(parsePlan(serializePlan(plan as unknown as Plan))).toBeNull()
+  })
+
+  it('rejects wall items referencing unknown rooms or bad edges', () => {
+    const wallItem = {
+      id: 'w1', catalogId: 'wall-art', mount: 'wall', roomId: 'nope', edgeIndex: 0,
+      offset: 1, elevation: 1.4, size: { width: 0.8, depth: 0.05, height: 0.6 },
+    }
+    const plan = { ...createDefaultPlan(), furniture: [wallItem] }
+    expect(parsePlan(serializePlan(plan as unknown as Plan))).toBeNull()
+  })
+
+  it('rejects unknown floorMaterial and bad wallColor on rooms', () => {
+    const base = createDefaultPlan()
+    const room = { id: 'r1', name: 'A', polygon: rectToPolygon({ x: 0, y: 0, width: 3, height: 3 }), color: '#8ecae6' }
+    expect(parsePlan(serializePlan({ ...base, rooms: [{ ...room, floorMaterial: 'nope' }] } as Plan))).toBeNull()
+    expect(parsePlan(serializePlan({ ...base, rooms: [{ ...room, wallColor: 'red' }] } as unknown as Plan))).toBeNull()
+    expect(parsePlan(serializePlan({ ...base, rooms: [{ ...room, floorMaterial: 'oak', wallColor: '#aabbcc' }] } as Plan))).not.toBeNull()
+  })
+
+  it('clamps size to catalog bounds and normalizes rotation on import', () => {
+    const plan = {
+      ...createDefaultPlan(),
+      furniture: [{ ...floorItem, rotation: -270, size: { width: 99, depth: 0.01, height: 0.85 } }],
+    }
+    const parsed = parsePlan(serializePlan(plan as Plan))
+    const item = parsed?.furniture[0] as FloorItem | undefined
+    expect(item?.rotation).toBe(90)
+    expect(item?.size.width).toBe(2.8) // max width for sofa-3seat
+    expect(item?.size.depth).toBe(0.8) // min depth
+  })
+
+  it('clamps floor positions into the apartment', () => {
+    const plan = { ...createDefaultPlan(), furniture: [{ ...floorItem, position: { x: -50, y: 2 } }] }
+    const parsed = parsePlan(serializePlan(plan as Plan))
+    const item = parsed?.furniture[0] as FloorItem | undefined
+    expect(item?.position.x).toBeGreaterThanOrEqual(0)
   })
 })

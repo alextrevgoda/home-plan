@@ -50,3 +50,11 @@ export function rectsOverlap(a: Rect, b: Rect): boolean {
 export function rectInBounds(r: Rect, apartment: Apartment): boolean {
   return r.x >= 0 && r.y >= 0 && r.x + r.width <= apartment.width && r.y + r.height <= apartment.depth
 }
+
+export function normalizeDeg(d: number): number {
+  return ((d % 360) + 360) % 360
+}
+
+export function roundDeg(d: number): number {
+  return Math.round(d * 10) / 10
+}
