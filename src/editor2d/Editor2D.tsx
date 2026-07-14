@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from 'pixi.js'
+import { Application, Container, Graphics, type FederatedPointerEvent } from 'pixi.js'
 import { useEffect, useRef } from 'react'
 import { catalogItem } from '../model/catalog'
 import { roundCm, polygonToRect } from '../model/geometry'
@@ -152,6 +152,25 @@ export function Editor2D() {
       app.stage.eventMode = 'static'
       app.stage.hitArea = app.screen
 
+      // Pointer capture keeps mid-drag `pointermove` deliveries flowing to the canvas even once
+      // the pointer leaves its bounds (without it, dragging an item off-canvas stalls the drag
+      // until the pointer re-enters; pointerupoutside only catches the eventual release).
+      const capturePointer = (pointerId: number) => {
+        try {
+          app.canvas.setPointerCapture(pointerId)
+        } catch {
+          // not every environment/pointer type supports capture; drags still work via
+          // pointerupoutside, just without moves continuing past the canvas edge
+        }
+      }
+      const releasePointer = (pointerId: number) => {
+        try {
+          app.canvas.releasePointerCapture(pointerId)
+        } catch {
+          // no-op if capture was never established for this pointer
+        }
+      }
+
       // If the in-progress drag left a solid floor item colliding with another solid, snap it
       // back to where the drag started. Shared by the normal pointerup end-of-drag path and the
       // Escape-to-cancel path, so a colliding position never survives the end of an interaction.
@@ -225,7 +244,7 @@ export function Editor2D() {
         markDirty()
       }
 
-      app.stage.on('pointerdown', (e) => {
+      const handlePointerDown = (e: FederatedPointerEvent) => {
         if (e.pointerType === 'touch') {
           if (touchPoints.size >= 2) return // ignore 3rd+ finger entirely
           touchPoints.set(e.pointerId, { x: e.global.x, y: e.global.y })
@@ -356,6 +375,11 @@ export function Editor2D() {
           lastTap = tap
           panning = { lastX: e.global.x, lastY: e.global.y, downX: e.global.x, downY: e.global.y }
         }
+      }
+
+      app.stage.on('pointerdown', (e) => {
+        handlePointerDown(e)
+        if (panning || drag.kind !== 'idle') capturePointer(e.pointerId)
       })
 
       app.stage.on('pointermove', (e) => {
@@ -520,7 +544,7 @@ export function Editor2D() {
         }
       })
 
-      const endInteraction = () => {
+      const endInteraction = (e?: FederatedPointerEvent) => {
         panning = null
         revertDragIfColliding()
         if (drag.kind !== 'idle' || guides.length > 0) {
@@ -528,13 +552,9 @@ export function Editor2D() {
           guides = []
           markDirty()
         }
+        if (e) releasePointer(e.pointerId)
       }
-      const endPointer = (e: {
-        pointerType: string
-        pointerId: number
-        type: string
-        global: { x: number; y: number }
-      }) => {
+      const endPointer = (e: FederatedPointerEvent) => {
         if (e.pointerType === 'touch') {
           const pending =
             pendingPlacement && pendingPlacement.pointerId === e.pointerId ? pendingPlacement : null
@@ -546,6 +566,7 @@ export function Editor2D() {
               const rest = [...touchPoints.values()][0]
               panning = { lastX: rest.x, lastY: rest.y, downX: rest.x, downY: rest.y }
               pinching = false
+              releasePointer(e.pointerId)
               return
             }
             pinching = touchPoints.size > 1
@@ -563,7 +584,7 @@ export function Editor2D() {
             }
           }
         }
-        endInteraction()
+        endInteraction(e)
       }
       app.stage.on('pointerup', endPointer)
       app.stage.on('pointerupoutside', endPointer)

@@ -61,7 +61,6 @@ const SYMBOLS: Record<string, SymbolFn> = {
     line(-w * 0.3, -h * 0.3, w * 0.3, h * 0.3), line(-w * 0.3, h * 0.3, w * 0.3, -h * 0.3),
   ],
   'wall-art': (w, h) => [box(w, h), rect(-w * 0.4, -h * 0.3, w * 0.8, h * 0.6)],
-  'wall-shelf': (w, h) => [box(w, h), line(-w / 2, 0, w / 2, 0)],
 }
 
 export const SYMBOL_IDS = Object.keys(SYMBOLS)

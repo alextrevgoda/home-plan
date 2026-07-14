@@ -10,6 +10,8 @@ import { useToast } from '../ui/toast'
 import { PlanFurniture } from './PlanFurniture'
 import { fillForOpening, wallSegmentsForRoom } from './walls'
 
+const NEUTRAL_WALL_COLOR = '#f5f5f0'
+
 const failedTextureOnce = new Set<string>()
 const textureLoader = new TextureLoader()
 const textureCache = new Map<string, Promise<Texture>>()
@@ -34,8 +36,10 @@ export function Viewer3D() {
       style={{ position: 'absolute', inset: 0 }}
     >
       <color attach="background" args={['#e8ecef']} />
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[width, 12, depth]} intensity={1.4} castShadow />
+      <ambientLight intensity={0.45} />
+      <hemisphereLight args={['#f2f6ff', '#8d8574', 1.05]} />
+      <directionalLight position={[width, 12, depth]} intensity={1.25} castShadow />
+      <directionalLight position={[-width * 0.4, 8, -depth * 0.4]} intensity={0.65} />
 
       <group position={[-width / 2, 0, -depth / 2]}>
         {/* ground plane, slightly below floors */}
@@ -76,12 +80,28 @@ function RoomMesh({ room, plan }: { room: Room; plan: Plan }) {
             <meshStandardMaterial color={room.color} />
           </mesh>
         ))}
-      {wallSegmentsForRoom(room, plan).map((piece, i) => (
-        <mesh key={i} position={piece.center} rotation-y={piece.rotationY} castShadow receiveShadow>
-          <boxGeometry args={piece.size} />
-          <meshStandardMaterial color={room.wallColor ?? '#f5f5f0'} />
-        </mesh>
-      ))}
+      {wallSegmentsForRoom(room, plan).map((piece, i) =>
+        room.wallColor ? (
+          <mesh key={i} position={piece.center} rotation-y={piece.rotationY} castShadow receiveShadow>
+            <boxGeometry args={piece.size} />
+            {/* Box face order is +x,-x,+y,-y,+z,-z (material-0..5). Given wallSegmentsForRoom's
+                rotationY (derived from the room polygon's winding), the box's local +z face
+                (material-4) is the one facing into the room for every edge — verified by
+                screenshot (loud wallColor, orbit outside the room: exterior stays neutral). */}
+            <meshStandardMaterial attach="material-0" color={NEUTRAL_WALL_COLOR} />
+            <meshStandardMaterial attach="material-1" color={NEUTRAL_WALL_COLOR} />
+            <meshStandardMaterial attach="material-2" color={NEUTRAL_WALL_COLOR} />
+            <meshStandardMaterial attach="material-3" color={NEUTRAL_WALL_COLOR} />
+            <meshStandardMaterial attach="material-4" color={room.wallColor} />
+            <meshStandardMaterial attach="material-5" color={NEUTRAL_WALL_COLOR} />
+          </mesh>
+        ) : (
+          <mesh key={i} position={piece.center} rotation-y={piece.rotationY} castShadow receiveShadow>
+            <boxGeometry args={piece.size} />
+            <meshStandardMaterial color={NEUTRAL_WALL_COLOR} />
+          </mesh>
+        ),
+      )}
     </group>
   )
 }
