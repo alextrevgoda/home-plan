@@ -6,6 +6,10 @@ import App from './ui/App'
 import './ui/app.css'
 import { useToast } from './ui/toast'
 
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __planStore?: typeof usePlanStore }).__planStore = usePlanStore
+}
+
 const { plan, recovered } = loadFromStorage(localStorage)
 usePlanStore.getState().loadPlan(plan)
 if (recovered) {
