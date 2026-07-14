@@ -1,4 +1,6 @@
-import type { Rect, Vec2 } from './types'
+import { clampOffset, roomEdge } from './openings'
+import { roundCm } from './geometry'
+import type { Plan, Rect, Room, Vec2 } from './types'
 
 export const MIN_EDGE = 0.1
 
@@ -167,4 +169,217 @@ export function mergeCollinear(polygon: Vec2[]): MergeResult {
     offsetShift[oi] = acc
   }
   return { polygon: outVertices, edgeIndexMap, offsetShift }
+}
+
+interface AttachmentRemap {
+  edgeIndex: (old: number) => number
+  offsetShift: (old: number) => number
+}
+
+const IDENTITY: AttachmentRemap = { edgeIndex: (i) => i, offsetShift: () => 0 }
+
+function withRoomPolygon(
+  plan: Plan,
+  roomId: string,
+  polygon: Vec2[],
+  remap: AttachmentRemap,
+): Plan | null {
+  if (!validateRoomPolygon(polygon)) return null
+  const nextRoom = { ...plan.rooms.find((r) => r.id === roomId)!, polygon }
+  const homeEdge = (edgeIndex: number, offset: number, width: number) => {
+    const newIndex = remap.edgeIndex(edgeIndex)
+    const edge = roomEdge(nextRoom, newIndex)
+    const raw = offset + remap.offsetShift(edgeIndex)
+    return { edgeIndex: newIndex, offset: edge ? clampOffset(raw, width, edge.length) : raw }
+  }
+  const openings = plan.openings.map((o) =>
+    o.roomId === roomId ? { ...o, ...homeEdge(o.edgeIndex, o.offset, o.width) } : o,
+  )
+  const furniture = plan.furniture.map((f) =>
+    f.mount === 'wall' && f.roomId === roomId
+      ? { ...f, ...homeEdge(f.edgeIndex, f.offset, f.size.width) }
+      : f,
+  )
+  return {
+    ...plan,
+    rooms: plan.rooms.map((r) => (r.id === roomId ? nextRoom : r)),
+    openings,
+    furniture,
+  }
+}
+
+export function translateRoom(plan: Plan, roomId: string, delta: Vec2): Plan | null {
+  const r = plan.rooms.find((room) => room.id === roomId)
+  if (!r || !Number.isFinite(delta.x) || !Number.isFinite(delta.y)) return null
+  const polygon = r.polygon.map((p) => ({ x: roundCm(p.x + delta.x), y: roundCm(p.y + delta.y) }))
+  return withRoomPolygon(plan, roomId, polygon, IDENTITY)
+}
+
+// Rotates a cyclic vertex array left by `k` (new[i] = arr[(i + k) % n]). Used so pushRoomEdge
+// can always operate as if the pushed edge starts at index 0 — eliminating the wrap case
+// (edgeIndex === n − 1, whose edge otherwise straddles the end/start of the array) as a special
+// case. rotateRight is its inverse, applied to the (possibly resized, post-insert/dedupe) result
+// using THAT array's own length for the modulus — rotating out by the same amount `k` used to
+// rotate in restores the original cyclic starting point.
+function rotateLeft<T>(arr: T[], k: number): T[] {
+  const n = arr.length
+  const s = ((k % n) + n) % n
+  return s === 0 ? arr.slice() : arr.slice(s).concat(arr.slice(0, s))
+}
+
+function rotateRight<T>(arr: T[], k: number): T[] {
+  const n = arr.length
+  const s = ((k % n) + n) % n
+  return s === 0 ? arr.slice() : arr.slice(n - s).concat(arr.slice(0, n - s))
+}
+
+export function pushRoomEdge(plan: Plan, roomId: string, edgeIndex: number, coordinate: number): Plan | null {
+  const r = plan.rooms.find((room) => room.id === roomId)
+  if (!r || !Number.isFinite(coordinate)) return null
+  const n = r.polygon.length
+  if (!Number.isInteger(edgeIndex) || edgeIndex < 0 || edgeIndex >= n) return null
+
+  // Work in a frame rotated so the pushed edge is always edge 0 → its endpoints are always
+  // work[0] and work[1], never wrapping across the array boundary.
+  const shift = edgeIndex
+  const work = rotateLeft(r.polygon, shift)
+  const a = work[0]
+  const b = work[1]
+  const horizontal = a.y === b.y
+  const c = roundCm(coordinate)
+  const movedA = horizontal ? { ...a, y: c } : { ...a, x: c }
+  const movedB = horizontal ? { ...b, y: c } : { ...b, x: c }
+
+  // A neighbor edge PARALLEL to the pushed edge (the split-vertex case) needs a perpendicular
+  // connector: keep the original endpoint as an inserted vertex. Perpendicular neighbors just
+  // stretch, as before.
+  const prevV = work[n - 1]
+  const nextV = work[2 % n]
+  const prevParallel = horizontal ? prevV.y === a.y : prevV.x === a.x
+  const nextParallel = horizontal ? nextV.y === b.y : nextV.x === b.x
+
+  const rebuilt: Vec2[] = []
+  if (prevParallel) rebuilt.push(a) // connector vertex (unmoved copy)
+  rebuilt.push(movedA, movedB)
+  if (nextParallel) rebuilt.push(b) // connector vertex (unmoved copy)
+  for (let i = 2; i < n; i++) rebuilt.push(work[i])
+
+  // index remap for the insertions (before dedupe), expressed in the rotated (work) frame where
+  // the pushed edge is always index 0
+  const insBefore = prevParallel ? 1 : 0
+  const insAfter = nextParallel ? 1 : 0
+  const afterInsert = (workOld: number): number => (workOld === 0 ? insBefore : workOld + insBefore + insAfter)
+
+  // a flush push collapses a connector to zero length — dedupe consecutive equal vertices,
+  // remapping edges that collapse onto the following edge (offset clamps to that edge)
+  const { polygon: workResult, dedupeMap } = dedupeZeroEdges(rebuilt)
+  const polygon = rotateRight(workResult, shift)
+  if (!validateRoomPolygon(polygon)) return null
+  const m = workResult.length
+  const remap: AttachmentRemap = {
+    edgeIndex: (old) => {
+      const workOld = ((old - shift) % n + n) % n
+      const workNew = dedupeMap[afterInsert(workOld)]
+      return (workNew + shift) % m
+    },
+    offsetShift: () => 0,
+  }
+  return withRoomPolygon(plan, roomId, polygon, remap)
+}
+
+function dedupeZeroEdges(polygon: Vec2[]): { polygon: Vec2[]; dedupeMap: number[] } {
+  const n = polygon.length
+  const out: Vec2[] = []
+  const dedupeMap = new Array<number>(n)
+  for (let i = 0; i < n; i++) {
+    const cur = polygon[i]
+    const next = polygon[(i + 1) % n]
+    const zero = cur.x === next.x && cur.y === next.y
+    dedupeMap[i] = zero ? -1 : -2 // fill below once final indices are known
+    if (!zero) out.push(cur)
+  }
+  if (out.length === 0) return { polygon: out, dedupeMap: dedupeMap.map(() => 0) } // fully degenerate; caller validates and rejects
+  // assign final edge indices: each kept old edge maps in order; a collapsed edge maps to the
+  // NEXT kept edge (attachments on a zero-length edge re-home there, offset clamps to 0-ish)
+  let newIdx = 0
+  const firstPass = new Array<number>(n)
+  for (let i = 0; i < n; i++) {
+    if (dedupeMap[i] === -2) firstPass[i] = newIdx++
+    else firstPass[i] = -1
+  }
+  for (let i = 0; i < n; i++) {
+    if (firstPass[i] !== -1) {
+      dedupeMap[i] = firstPass[i]
+    } else {
+      // walk forward to the next kept edge (wrapping)
+      let j = i
+      while (firstPass[j % n] === -1) j++
+      dedupeMap[i] = firstPass[j % n]
+    }
+  }
+  return { polygon: out, dedupeMap }
+}
+
+export function splitRoomEdge(plan: Plan, roomId: string, edgeIndex: number, t: number): Plan | null {
+  const r = plan.rooms.find((room) => room.id === roomId)
+  const edge = r ? roomEdge(r, edgeIndex) : null
+  if (!r || !edge || !Number.isFinite(t)) return null
+  const tc = roundCm(t)
+  if (tc < MIN_EDGE || tc > edge.length - MIN_EDGE) return null
+  const point = { x: roundCm(edge.a.x + edge.ux * tc), y: roundCm(edge.a.y + edge.uy * tc) }
+  const polygon = [...r.polygon]
+  polygon.splice(edgeIndex + 1, 0, point)
+  if (!validateRoomPolygon(polygon)) return null
+  const nextRoom = { ...r, polygon }
+  // one-pass routing: items before the split edge keep their index; after it shift +1;
+  // ON it, the item's CENTER picks the sub-edge and the offset is re-based for the second
+  const route = <T extends { edgeIndex: number; offset: number }>(item: T, width: number): T => {
+    if (item.edgeIndex < edgeIndex) return item
+    if (item.edgeIndex > edgeIndex) return { ...item, edgeIndex: item.edgeIndex + 1 }
+    const toSecond = item.offset >= tc
+    const newIndex = toSecond ? edgeIndex + 1 : edgeIndex
+    const e = roomEdge(nextRoom, newIndex)!
+    const rebased = toSecond ? item.offset - tc : item.offset
+    return { ...item, edgeIndex: newIndex, offset: clampOffset(rebased, width, e.length) }
+  }
+  return {
+    ...plan,
+    rooms: plan.rooms.map((room) => (room.id === roomId ? nextRoom : room)),
+    openings: plan.openings.map((o) => (o.roomId === roomId ? route(o, o.width) : o)),
+    furniture: plan.furniture.map((f) =>
+      f.mount === 'wall' && f.roomId === roomId ? route(f, f.size.width) : f,
+    ),
+  }
+}
+
+export function moveRoomVertex(plan: Plan, roomId: string, vertexIndex: number, point: Vec2): Plan | null {
+  const r = plan.rooms.find((room) => room.id === roomId)
+  if (!r || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null
+  const n = r.polygon.length
+  if (!Number.isInteger(vertexIndex) || vertexIndex < 0 || vertexIndex >= n) return null
+  const prev = (vertexIndex - 1 + n) % n
+  const next = (vertexIndex + 1) % n
+  const prevVertical = r.polygon[prev].x === r.polygon[vertexIndex].x
+  const nextVertical = r.polygon[vertexIndex].x === r.polygon[next].x
+  if (prevVertical === nextVertical) return null // straight-through vertex: not directly draggable
+  const p = { x: roundCm(point.x), y: roundCm(point.y) }
+  const polygon = r.polygon.map((v, i) => {
+    if (i === vertexIndex) return p
+    if (i === prev) return prevVertical ? { ...v, x: p.x } : { ...v, y: p.y }
+    if (i === next) return nextVertical ? { ...v, x: p.x } : { ...v, y: p.y }
+    return v
+  })
+  return withRoomPolygon(plan, roomId, polygon, IDENTITY)
+}
+
+export function mergeRoomCollinear(plan: Plan, roomId: string): Plan {
+  const r = plan.rooms.find((room) => room.id === roomId)
+  if (!r) return plan
+  const merged = mergeCollinear(r.polygon)
+  if (merged.polygon.length === r.polygon.length) return plan
+  const remap: AttachmentRemap = {
+    edgeIndex: (old) => merged.edgeIndexMap[old],
+    offsetShift: (old) => merged.offsetShift[old],
+  }
+  return withRoomPolygon(plan, roomId, merged.polygon, remap) ?? plan
 }
