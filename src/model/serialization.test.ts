@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { rectToPolygon } from './geometry'
 import { createDefaultPlan, parsePlan, planSchema, serializePlan } from './serialization'
-import type { FloorItem, Plan } from './types'
+import type { FloorItem, Plan, WallItem } from './types'
 
 describe('createDefaultPlan', () => {
   it('creates a valid empty v3 plan with spec defaults', () => {
@@ -235,5 +235,25 @@ describe('v3 furniture', () => {
     const parsed = parsePlan(serializePlan(plan as Plan))
     const item = parsed?.furniture[0] as FloorItem | undefined
     expect(item?.position.x).toBeGreaterThanOrEqual(0)
+  })
+
+  it('parses a wall item with a small negative offset/elevation and clamps them on import', () => {
+    const base = createDefaultPlan()
+    base.rooms.push({
+      id: 'r1',
+      name: 'Room',
+      polygon: rectToPolygon({ x: 0, y: 0, width: 3, height: 3 }),
+      color: '#8ecae6',
+    })
+    const wallItem = {
+      id: 'w1', catalogId: 'wall-art', mount: 'wall', roomId: 'r1', edgeIndex: 0,
+      offset: -1, elevation: -0.5, size: { width: 0.8, depth: 0.05, height: 0.6 },
+    }
+    const plan = { ...base, furniture: [wallItem] }
+    const parsed = parsePlan(serializePlan(plan as unknown as Plan))
+    expect(parsed).not.toBeNull()
+    const item = parsed?.furniture[0] as WallItem | undefined
+    expect(item?.offset).toBeGreaterThanOrEqual(wallItem.size.width / 2)
+    expect(item?.elevation).toBe(0)
   })
 })

@@ -46,8 +46,8 @@ const wallItemSchema = z.object({
   mount: z.literal('wall'),
   roomId: z.string().min(1),
   edgeIndex: z.number().int().min(0),
-  offset: z.number().finite().min(0),
-  elevation: z.number().finite().min(0),
+  offset: z.number().finite(),
+  elevation: z.number().finite(),
   size: size3Schema,
   color: hexColor.optional(),
 })
@@ -72,7 +72,7 @@ export const planSchema = z
           .array(vec2Schema)
           .min(3)
           .refine((poly) => polygonArea(poly) > 0, { message: 'degenerate polygon' }),
-        color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        color: hexColor,
         floorMaterial: z.string().refine((id) => !!floorFinish(id), { message: 'unknown floor material' }).optional(),
         wallColor: hexColor.optional(),
       }),
