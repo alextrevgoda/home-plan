@@ -25,6 +25,13 @@ export function loadFurnitureModel(gl: WebGLRenderer, cat: CatalogItem): Promise
     p = getLoader(gl)
       .loadAsync(import.meta.env.BASE_URL + cat.modelPath)
       .then((gltf) => normalize(gltf.scene, cat.modelRotationY ?? 0))
+      .catch((err) => {
+        // Don't cache a rejected promise forever: a transient network failure would
+        // otherwise mean gray fallback boxes for this catalog item until a full reload.
+        // Deleting the entry lets the next mount (or retry) attempt the load again.
+        cache.delete(cat.id)
+        throw err
+      })
     cache.set(cat.id, p)
   }
   return p
