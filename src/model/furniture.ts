@@ -1,6 +1,6 @@
 import { catalogItem } from './catalog'
-import { roundCm } from './geometry'
-import { roomEdge } from './openings'
+import { normalizeDeg, roundCm, roundDeg } from './geometry'
+import { projectOntoEdge, roomEdge } from './openings'
 import type { Apartment, FloorItem, Plan, PlacedItem, Room, Size3, Vec2, WallItem } from './types'
 
 export const WALL_SNAP_THRESHOLD = 0.15
@@ -138,4 +138,43 @@ export function wallItemSpan(item: WallItem, room: Room): { a: Vec2; b: Vec2 } |
     a: { x: edge.a.x + edge.ux * s, y: edge.a.y + edge.uy * s },
     b: { x: edge.a.x + edge.ux * e, y: edge.a.y + edge.uy * e },
   }
+}
+
+export interface WallSnap {
+  position: Vec2
+  rotation: number
+}
+
+export function snapFloorItemToWall(
+  position: Vec2,
+  size: Size3,
+  plan: Plan,
+  threshold = WALL_SNAP_THRESHOLD,
+): WallSnap | null {
+  let best: WallSnap | null = null
+  let bestScore = threshold
+  for (const room of plan.rooms) {
+    for (let i = 0; i < room.polygon.length; i++) {
+      const edge = roomEdge(room, i)
+      if (!edge) continue
+      const nx = -edge.uy
+      const ny = edge.ux
+      const t = projectOntoEdge(edge, position)
+      if (t <= 0 || t >= edge.length) continue
+      const side = (position.x - edge.a.x) * nx + (position.y - edge.a.y) * ny
+      if (side < 0) continue // wrong side of the wall (outside the room)
+      const score = Math.abs(side - size.depth / 2)
+      if (score < bestScore) {
+        bestScore = score
+        best = {
+          position: {
+            x: roundCm(edge.a.x + edge.ux * t + nx * (size.depth / 2)),
+            y: roundCm(edge.a.y + edge.uy * t + ny * (size.depth / 2)),
+          },
+          rotation: roundDeg(normalizeDeg((Math.atan2(edge.uy, edge.ux) * 180) / Math.PI)),
+        }
+      }
+    }
+  }
+  return best
 }

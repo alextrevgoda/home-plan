@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampFloorItemPosition, collidingFurnitureIds, convexOverlap, floorItemCollides,
-  floorItemInBounds, footprintCorners, isSolidFloorItem, pointInConvexPolygon, wallItemSpan,
+  floorItemInBounds, footprintCorners, isSolidFloorItem, pointInConvexPolygon, snapFloorItemToWall, wallItemSpan,
 } from './furniture'
+import { rectToPolygon } from './geometry'
 import { createDefaultPlan } from './serialization'
 import type { FloorItem, Plan, Size3, WallItem } from './types'
 
@@ -89,5 +90,32 @@ describe('wallItemSpan', () => {
       edgeIndex: 0, offset: 2, elevation: 1.4, size: { width: 0.8, depth: 0.05, height: 0.6 } }
     expect(wallItemSpan(art, room)).toEqual({ a: { x: 1.6, y: 0 }, b: { x: 2.4, y: 0 } })
     expect(wallItemSpan({ ...art, edgeIndex: 9 }, room)).toBeNull()
+  })
+})
+
+describe('snapFloorItemToWall', () => {
+  const room = { id: 'r1', name: 'A', color: '#8ecae6', polygon: rectToPolygon({ x: 1, y: 1, width: 4, height: 3 }) }
+  const plan: Plan = { ...createDefaultPlan(), rooms: [room] }
+  const sofaSize: Size3 = { width: 2, depth: 1, height: 0.8 }
+
+  it('snaps flush to the top wall, rotation 0', () => {
+    // top edge at y=1; flush center y = 1 + depth/2 = 1.5; item hovering at y=1.55
+    const snap = snapFloorItemToWall({ x: 3, y: 1.55 }, sofaSize, plan)
+    expect(snap).toEqual({ position: { x: 3, y: 1.5 }, rotation: 0 })
+  })
+
+  it('snaps to the left wall with rotation 270', () => {
+    // left edge at x=1 (edge 3, direction -y, inward +x); flush center x = 1.5
+    const snap = snapFloorItemToWall({ x: 1.6, y: 2.5 }, sofaSize, plan)
+    expect(snap).toEqual({ position: { x: 1.5, y: 2.5 }, rotation: 270 })
+  })
+
+  it('returns null away from walls or outside the room side', () => {
+    expect(snapFloorItemToWall({ x: 3, y: 2.5 }, sofaSize, plan)).toBeNull() // room middle
+    expect(snapFloorItemToWall({ x: 3, y: 0.5 }, sofaSize, plan)).toBeNull() // outside the room
+  })
+
+  it('ignores edges whose extent the center does not project into', () => {
+    expect(snapFloorItemToWall({ x: 8, y: 1.55 }, sofaSize, plan)).toBeNull()
   })
 })
