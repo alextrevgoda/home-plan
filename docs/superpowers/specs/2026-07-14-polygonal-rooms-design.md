@@ -19,8 +19,11 @@ In scope:
   of corners
 - Editing gestures: push a wall perpendicular (edge handle), move a corner
   (vertex handle), split a wall at a point (double-click) to enable notches
-- Automatic collinear merge (pushing a notch flush removes it — this is the
-  "undo" for a split; no explicit vertex-delete gesture)
+- Automatic collinear merge at drag end (pushing a notch flush removes it —
+  this is the "undo" for a split; no explicit vertex-delete gesture).
+  Vertex handles appear only on corner vertices; split-created
+  straight-through vertices are manipulated by pushing their adjacent edge
+  segments, not dragged directly
 - Attachment stability: doors, windows, and wall furniture survive push,
   split, and merge with correct edge references and offsets
 - Polygon-aware selection (point-in-polygon), rendering, labels
@@ -47,8 +50,13 @@ The store enforces a tightened invariant on every commit:
   orientation — depends on it)
 - **Min edge:** every edge ≥ 0.1 m (`MIN_EDGE`); `MIN_ROOM_SIZE` (0.5 m)
   continues to bound overall rect creation
-- **Canonical:** no collinear adjacent edges (merged automatically after
-  every edit), area > 0, all coordinates cm-rounded
+- **Canonical:** area > 0, all coordinates cm-rounded. Collinear adjacent
+  edges are merged automatically at the END of push/vertex-move drags —
+  but NOT after a split, whose entire purpose is to introduce a collinear
+  vertex pair that persists until a later push uses it (pushing a split
+  segment flush re-merges it, which is how a notch is undone). During a
+  live drag no merge runs (edge indices must stay stable for the drag);
+  the merge fires on drag end.
 
 Zod: v3 imports whose polygons violate rectilinearity or simplicity are
 rejected with the standard toast. (Only hand-edited files can contain such
