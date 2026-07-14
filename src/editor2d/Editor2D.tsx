@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from 'pixi.js'
+import { Application, Container, Graphics, type FederatedPointerEvent } from 'pixi.js'
 import { useEffect, useRef } from 'react'
 import { catalogItem } from '../model/catalog'
 import { roundCm, polygonToRect } from '../model/geometry'
@@ -138,7 +138,26 @@ export function Editor2D() {
       app.stage.eventMode = 'static'
       app.stage.hitArea = app.screen
 
-      app.stage.on('pointerdown', (e) => {
+      // Pointer capture keeps mid-drag `pointermove` deliveries flowing to the canvas even once
+      // the pointer leaves its bounds (without it, dragging an item off-canvas stalls the drag
+      // until the pointer re-enters; pointerupoutside only catches the eventual release).
+      const capturePointer = (pointerId: number) => {
+        try {
+          app.canvas.setPointerCapture(pointerId)
+        } catch {
+          // not every environment/pointer type supports capture; drags still work via
+          // pointerupoutside, just without moves continuing past the canvas edge
+        }
+      }
+      const releasePointer = (pointerId: number) => {
+        try {
+          app.canvas.releasePointerCapture(pointerId)
+        } catch {
+          // no-op if capture was never established for this pointer
+        }
+      }
+
+      const handlePointerDown = (e: FederatedPointerEvent) => {
         if (e.button === 1 || spaceDown) {
           panning = { lastX: e.global.x, lastY: e.global.y }
           return
@@ -234,6 +253,11 @@ export function Editor2D() {
           const rect = polygonToRect(store.plan.rooms.find((r) => r.id === roomId)!.polygon)
           if (rect) drag = { kind: 'move', roomId, grabOffset: { x: world.x - rect.x, y: world.y - rect.y } }
         }
+      }
+
+      app.stage.on('pointerdown', (e) => {
+        handlePointerDown(e)
+        if (panning || drag.kind !== 'idle') capturePointer(e.pointerId)
       })
 
       app.stage.on('pointermove', (e) => {
@@ -387,7 +411,7 @@ export function Editor2D() {
         }
       }
 
-      const endInteraction = () => {
+      const endInteraction = (e?: FederatedPointerEvent) => {
         panning = null
         revertDragIfColliding()
         if (drag.kind !== 'idle' || guides.length > 0) {
@@ -395,9 +419,11 @@ export function Editor2D() {
           guides = []
           markDirty()
         }
+        if (e) releasePointer(e.pointerId)
       }
       app.stage.on('pointerup', endInteraction)
       app.stage.on('pointerupoutside', endInteraction)
+      app.stage.on('pointercancel', endInteraction)
 
       const onWheel = (ev: WheelEvent) => {
         ev.preventDefault()

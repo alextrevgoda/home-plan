@@ -17,6 +17,21 @@ function memoryStorage(): Storage {
   } as Storage
 }
 
+function fakeUnloadTarget() {
+  const listeners = new Map<string, () => void>()
+  return {
+    addEventListener: vi.fn((type: string, cb: () => void) => {
+      listeners.set(type, cb)
+    }),
+    removeEventListener: vi.fn((type: string) => {
+      listeners.delete(type)
+    }),
+    dispatch(type: string) {
+      listeners.get(type)?.()
+    },
+  }
+}
+
 beforeEach(() => {
   usePlanStore.setState({ plan: createDefaultPlan(), selection: null, mode: '2d', placing: null })
 })
@@ -95,5 +110,41 @@ describe('startAutosave', () => {
     expect(onError).toHaveBeenCalledTimes(1)
 
     stop()
+  })
+
+  it('flushes a pending debounced write synchronously on beforeunload', () => {
+    vi.useFakeTimers()
+    const storage = memoryStorage()
+    const target = fakeUnloadTarget()
+    const stop = startAutosave(storage, 500, undefined, target)
+
+    usePlanStore.getState().addRoom()
+    expect(storage.getItem(STORAGE_KEY)).toBeNull()
+
+    target.dispatch('beforeunload')
+    expect(storage.getItem(STORAGE_KEY)).toContain('"Room 1"')
+
+    // the debounced timer should have been cleared, so advancing time
+    // must not attempt a second (redundant) write beyond what's already there
+    const savedAfterFlush = storage.getItem(STORAGE_KEY)
+    vi.advanceTimersByTime(1000)
+    expect(storage.getItem(STORAGE_KEY)).toBe(savedAfterFlush)
+
+    stop()
+  })
+
+  it('unregisters the beforeunload listener on cleanup', () => {
+    vi.useFakeTimers()
+    const storage = memoryStorage()
+    const target = fakeUnloadTarget()
+    const stop = startAutosave(storage, 500, undefined, target)
+
+    expect(target.addEventListener).toHaveBeenCalledWith('beforeunload', expect.any(Function))
+    stop()
+    expect(target.removeEventListener).toHaveBeenCalledWith('beforeunload', expect.any(Function))
+
+    usePlanStore.getState().addRoom()
+    target.dispatch('beforeunload')
+    expect(storage.getItem(STORAGE_KEY)).toBeNull()
   })
 })
