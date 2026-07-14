@@ -111,23 +111,25 @@ export function Editor2D() {
       resizeObserver.observe(host)
       cleanups.push(() => resizeObserver.disconnect())
 
-      let panning: { lastX: number; lastY: number } | null = null
+      let panning: { lastX: number; lastY: number; downX: number; downY: number } | null = null
       let spaceDown = false
 
       type DragState =
         | { kind: 'idle' }
-        | { kind: 'move'; roomId: string; grabOffset: Vec2 }
-        | { kind: 'resize'; roomId: string; handle: HandleId }
-        | { kind: 'moveOpening'; openingId: string }
+        | { kind: 'move'; roomId: string; grabOffset: Vec2; start: Rect }
+        | { kind: 'resize'; roomId: string; handle: HandleId; start: Rect }
+        | { kind: 'moveOpening'; openingId: string; start: number }
         | { kind: 'moveFloorItem'; itemId: string; grabOffset: Vec2; start: { position: Vec2; rotation: number } }
-        | { kind: 'moveWallItem'; itemId: string }
+        | { kind: 'moveWallItem'; itemId: string; start: { roomId: string; edgeIndex: number; offset: number } }
         | { kind: 'rotateFurniture'; itemId: string; start: { position: Vec2; rotation: number } }
       let drag: DragState = { kind: 'idle' }
       // touch gesture state: active touch contacts, whether a two-finger pinch is
-      // running, and the previous tap for double-tap detection
+      // running, the previous tap for double-tap detection, and an armed-placement
+      // tap that's deferred until pointerup (see pendingPlacement below)
       const touchPoints = new Map<number, Vec2>()
       let pinching = false
       let lastTap: Tap | null = null
+      let pendingPlacement: { pointerId: number; x: number; y: number } | null = null
       let hoverEdge: EdgeHit | null = null
       let ghost: FurnitureGhost | null = null
       let guides: SnapGuide[] = []
@@ -164,64 +166,116 @@ export function Editor2D() {
         }
       }
 
+      // Second-finger cancel (touch) must revert every drag kind to its exact
+      // drag-start state — not just colliding solid floor items, since a pinch
+      // can start mid-drag of a room, opening, or wall item too. Used ONLY by
+      // the second-finger cancel path; Escape and normal pointerup keep using
+      // revertDragIfColliding so desktop behavior is unchanged.
+      const revertDragToStart = () => {
+        const store = usePlanStore.getState()
+        if (drag.kind === 'move' || drag.kind === 'resize') {
+          store.updateRoomRect(drag.roomId, drag.start)
+        } else if (drag.kind === 'moveOpening') {
+          store.moveOpening(drag.openingId, drag.start)
+        } else if (drag.kind === 'moveWallItem') {
+          store.moveWallItem(drag.itemId, drag.start.roomId, drag.start.edgeIndex, drag.start.offset)
+        } else if (drag.kind === 'moveFloorItem' || drag.kind === 'rotateFurniture') {
+          store.moveFloorItem(drag.itemId, drag.start.position, drag.start.rotation)
+        }
+      }
+
+      // Shared placement logic, used by both the mouse/pen pointerdown path (fires
+      // immediately) and the deferred touch pointerup path (fires only if the tap
+      // didn't turn into a pan/pinch — see pendingPlacement).
+      const executeOpeningPlacement = (screen: Vec2, pointerType?: string) => {
+        const store = usePlanStore.getState()
+        if (!store.placing) return
+        const hit = nearestEdge(store.plan, viewport, screen, hitRadius(10, pointerType))
+        if (hit) store.addOpening(store.placing, hit.roomId, hit.edgeIndex, hit.offset)
+        else store.setPlacing(null)
+        hoverEdge = null
+        ghost = null
+        markDirty()
+      }
+
+      const executeFurniturePlacement = (screen: Vec2, pointerType?: string) => {
+        const store = usePlanStore.getState()
+        if (!store.placingFurniture) return
+        const world = screenToWorld(viewport, screen)
+        const cat = catalogItem(store.placingFurniture)
+        if (cat?.mount === 'floor') {
+          const snap = altDown ? null : snapFloorItemToWall(world, cat.defaultSize, store.plan)
+          const position = snap?.position ?? world
+          const rotation = snap?.rotation ?? 0
+          const candidate = { position, rotation, size: cat.defaultSize }
+          const valid =
+            floorItemInBounds(candidate, store.plan.apartment) &&
+            (cat.layer !== 'solid' || !floorItemCollides(candidate, store.plan))
+          if (valid) {
+            store.placeFurniture(cat.id, { mount: 'floor', position, rotation })
+            ghost = null
+          }
+        } else if (cat) {
+          const hit = nearestEdge(store.plan, viewport, screen, hitRadius(10, pointerType))
+          if (hit) {
+            store.placeFurniture(cat.id, { mount: 'wall', roomId: hit.roomId, edgeIndex: hit.edgeIndex, offset: hit.offset })
+            hoverEdge = null
+          }
+        }
+        markDirty()
+      }
+
       app.stage.on('pointerdown', (e) => {
         if (e.pointerType === 'touch') {
+          if (touchPoints.size >= 2) return // ignore 3rd+ finger entirely
           touchPoints.set(e.pointerId, { x: e.global.x, y: e.global.y })
           if (touchPoints.size === 2) {
             // Second finger: abandon any one-finger interaction and navigate instead.
-            // Reverting here doubles as the touch equivalent of Escape-cancel.
-            revertDragIfColliding()
+            revertDragToStart()
             drag = { kind: 'idle' }
             guides = []
             panning = null
             pinching = true
+            pendingPlacement = null
+            lastTap = null
             markDirty()
             return
           }
-          if (touchPoints.size > 2) return
         }
         if (e.button === 1 || spaceDown) {
-          panning = { lastX: e.global.x, lastY: e.global.y }
+          panning = { lastX: e.global.x, lastY: e.global.y, downX: e.global.x, downY: e.global.y }
           return
         }
         const store = usePlanStore.getState()
         const screen = { x: e.global.x, y: e.global.y }
         const world = screenToWorld(viewport, screen)
 
-        // armed placement: click places on the nearest wall, or cancels
+        // armed placement: click places on the nearest wall, or cancels. On touch,
+        // defer the decision to pointerup so starting a pinch doesn't commit a
+        // placement at the first finger's down point.
         if (store.placing) {
-          const hit = nearestEdge(store.plan, viewport, screen, hitRadius(10, e.pointerType))
-          if (hit) store.addOpening(store.placing, hit.roomId, hit.edgeIndex, hit.offset)
-          else store.setPlacing(null)
-          hoverEdge = null
-          ghost = null
-          markDirty()
+          if (e.pointerType === 'touch') {
+            pendingPlacement = { pointerId: e.pointerId, x: screen.x, y: screen.y }
+            lastTap = null
+            panning = { lastX: screen.x, lastY: screen.y, downX: screen.x, downY: screen.y }
+            markDirty()
+            return
+          }
+          executeOpeningPlacement(screen, e.pointerType)
           return
         }
 
-        // armed furniture placement: floor items place from the ghost, wall items attach to the nearest edge
+        // armed furniture placement: floor items place from the ghost, wall items attach to the
+        // nearest edge. Same touch deferral as above.
         if (store.placingFurniture) {
-          const cat = catalogItem(store.placingFurniture)
-          if (cat?.mount === 'floor') {
-            const snap = altDown ? null : snapFloorItemToWall(world, cat.defaultSize, store.plan)
-            const position = snap?.position ?? world
-            const rotation = snap?.rotation ?? 0
-            const candidate = { position, rotation, size: cat.defaultSize }
-            const valid =
-              floorItemInBounds(candidate, store.plan.apartment) &&
-              (cat.layer !== 'solid' || !floorItemCollides(candidate, store.plan))
-            if (valid) {
-              store.placeFurniture(cat.id, { mount: 'floor', position, rotation })
-              ghost = null
-            }
-          } else if (cat) {
-            const hit = nearestEdge(store.plan, viewport, screen, hitRadius(10, e.pointerType))
-            if (hit) {
-              store.placeFurniture(cat.id, { mount: 'wall', roomId: hit.roomId, edgeIndex: hit.edgeIndex, offset: hit.offset })
-              hoverEdge = null
-            }
+          if (e.pointerType === 'touch') {
+            pendingPlacement = { pointerId: e.pointerId, x: screen.x, y: screen.y }
+            lastTap = null
+            panning = { lastX: screen.x, lastY: screen.y, downX: screen.x, downY: screen.y }
+            markDirty()
+            return
           }
-          markDirty()
+          executeFurniturePlacement(screen, e.pointerType)
           return
         }
 
@@ -231,6 +285,7 @@ export function Editor2D() {
             ? store.plan.furniture.find((f) => f.id === store.selection!.id)
             : undefined
         if (selFurniture?.mount === 'floor' && hitRotationHandle(selFurniture, viewport, screen, hitRadius(9, e.pointerType))) {
+          if (e.pointerType === 'touch') lastTap = null
           drag = {
             kind: 'rotateFurniture',
             itemId: selFurniture.id,
@@ -242,14 +297,17 @@ export function Editor2D() {
         // openings are small targets on walls — they win over room bodies
         const openingId = hitOpening(store.plan, viewport, screen, hitRadius(8, e.pointerType))
         if (openingId) {
+          if (e.pointerType === 'touch') lastTap = null
+          const opening = store.plan.openings.find((o) => o.id === openingId)
           store.selectOpening(openingId)
-          drag = { kind: 'moveOpening', openingId }
+          drag = { kind: 'moveOpening', openingId, start: opening ? opening.offset : 0 }
           markDirty()
           return
         }
 
         const furnitureId = hitFurniture(store.plan, viewport, screen, hitRadius(8, e.pointerType))
         if (furnitureId) {
+          if (e.pointerType === 'touch') lastTap = null
           const item = store.plan.furniture.find((f) => f.id === furnitureId)!
           store.selectFurniture(furnitureId)
           if (item.mount === 'floor') {
@@ -259,7 +317,10 @@ export function Editor2D() {
               start: { position: item.position, rotation: item.rotation },
             }
           } else {
-            drag = { kind: 'moveWallItem', itemId: furnitureId }
+            drag = {
+              kind: 'moveWallItem', itemId: furnitureId,
+              start: { roomId: item.roomId, edgeIndex: item.edgeIndex, offset: item.offset },
+            }
           }
           markDirty()
           return
@@ -272,15 +333,17 @@ export function Editor2D() {
         if (selectedRoom && selectedRect) {
           const handle = hitHandle(selectedRect, viewport, screen, hitRadius(8, e.pointerType))
           if (handle) {
-            drag = { kind: 'resize', roomId: selectedRoom.id, handle }
+            if (e.pointerType === 'touch') lastTap = null
+            drag = { kind: 'resize', roomId: selectedRoom.id, handle, start: selectedRect }
             return
           }
         }
         const roomId = hitRoom(store.plan.rooms, world)
         store.selectRoom(roomId)
         if (roomId) {
+          if (e.pointerType === 'touch') lastTap = null
           const rect = polygonToRect(store.plan.rooms.find((r) => r.id === roomId)!.polygon)
-          if (rect) drag = { kind: 'move', roomId, grabOffset: { x: world.x - rect.x, y: world.y - rect.y } }
+          if (rect) drag = { kind: 'move', roomId, grabOffset: { x: world.x - rect.x, y: world.y - rect.y }, start: rect }
         } else if (e.pointerType === 'touch') {
           // empty canvas: one finger pans; a quick second tap refits the whole apartment
           const tap: Tap = { x: e.global.x, y: e.global.y, time: performance.now() }
@@ -291,7 +354,7 @@ export function Editor2D() {
             return
           }
           lastTap = tap
-          panning = { lastX: e.global.x, lastY: e.global.y }
+          panning = { lastX: e.global.x, lastY: e.global.y, downX: e.global.x, downY: e.global.y }
         }
       })
 
@@ -314,7 +377,15 @@ export function Editor2D() {
             offsetX: viewport.offsetX + e.global.x - panning.lastX,
             offsetY: viewport.offsetY + e.global.y - panning.lastY,
           }
-          panning = { lastX: e.global.x, lastY: e.global.y }
+          // A pan that's traveled far enough from its down point is not a tap —
+          // stop it from completing a double-tap refit with a later genuine tap.
+          if (
+            e.pointerType === 'touch' &&
+            Math.hypot(e.global.x - panning.downX, e.global.y - panning.downY) > 8
+          ) {
+            lastTap = null
+          }
+          panning = { lastX: e.global.x, lastY: e.global.y, downX: panning.downX, downY: panning.downY }
           markDirty()
           return
         }
@@ -458,18 +529,38 @@ export function Editor2D() {
           markDirty()
         }
       }
-      const endPointer = (e: { pointerType: string; pointerId: number }) => {
+      const endPointer = (e: {
+        pointerType: string
+        pointerId: number
+        type: string
+        global: { x: number; y: number }
+      }) => {
         if (e.pointerType === 'touch') {
+          const pending =
+            pendingPlacement && pendingPlacement.pointerId === e.pointerId ? pendingPlacement : null
+          if (pending) pendingPlacement = null
           touchPoints.delete(e.pointerId)
           if (pinching) {
             if (touchPoints.size === 1) {
               // one finger lifted mid-pinch: keep navigating with the remaining finger
               const rest = [...touchPoints.values()][0]
-              panning = { lastX: rest.x, lastY: rest.y }
+              panning = { lastX: rest.x, lastY: rest.y, downX: rest.x, downY: rest.y }
               pinching = false
               return
             }
             pinching = touchPoints.size > 1
+          }
+          // Deferred armed-placement tap: only commit if this is a genuine release
+          // (not a cancel) and the finger stayed within the tap threshold — a second
+          // finger joining already cleared pendingPlacement above.
+          if (pending && e.type === 'pointerup') {
+            const traveled = Math.hypot(e.global.x - pending.x, e.global.y - pending.y)
+            if (traveled < 12) {
+              const screen = { x: pending.x, y: pending.y }
+              const store = usePlanStore.getState()
+              if (store.placing) executeOpeningPlacement(screen, 'touch')
+              else if (store.placingFurniture) executeFurniturePlacement(screen, 'touch')
+            }
           }
         }
         endInteraction()

@@ -30,6 +30,7 @@ beforeEach(() => {
 // register it explicitly to keep renders isolated between tests.
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
 })
 
 function mockMobileLayout() {
@@ -141,7 +142,6 @@ it('mobile: hides the properties panel until something is selected', () => {
     usePlanStore.getState().addRoom()
   })
   expect(screen.getByRole('heading', { name: 'Room' })).toBeInTheDocument()
-  vi.restoreAllMocks()
 })
 
 it('mobile: the Apartment toolbar button opens apartment properties', () => {
@@ -149,7 +149,6 @@ it('mobile: the Apartment toolbar button opens apartment properties', () => {
   render(<App />)
   fireEvent.click(screen.getByRole('button', { name: 'Apartment' }))
   expect(screen.getByRole('heading', { name: 'Apartment' })).toBeInTheDocument()
-  vi.restoreAllMocks()
 })
 
 it('mobile: selecting something closes the catalog sheet', () => {
@@ -162,7 +161,6 @@ it('mobile: selecting something closes the catalog sheet', () => {
   })
   expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Room' })).toBeInTheDocument()
-  vi.restoreAllMocks()
 })
 
 it('mobile: an open catalog wins over a selection sheet', () => {
@@ -174,7 +172,6 @@ it('mobile: an open catalog wins over a selection sheet', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Furniture' }))
   expect(screen.getByRole('tablist')).toBeInTheDocument()
   expect(screen.queryByRole('heading', { name: 'Room' })).not.toBeInTheDocument()
-  vi.restoreAllMocks()
 })
 
 it('mobile: the sheet close button deselects and closes', () => {
@@ -186,7 +183,21 @@ it('mobile: the sheet close button deselects and closes', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Close panel' }))
   expect(usePlanStore.getState().selection).toBeNull()
   expect(screen.queryByRole('heading', { name: 'Room' })).not.toBeInTheDocument()
-  vi.restoreAllMocks()
+})
+
+it('mobile: a fresh selection closes a stale Apartment sheet so deselecting later does not resurface it', () => {
+  mockMobileLayout()
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Apartment' }))
+  expect(screen.getByRole('heading', { name: 'Apartment' })).toBeInTheDocument()
+  act(() => {
+    usePlanStore.getState().addRoom() // fresh selection while the Apartment sheet is open
+  })
+  expect(screen.getByRole('heading', { name: 'Room' })).toBeInTheDocument()
+  act(() => {
+    usePlanStore.getState().selectRoom(null)
+  })
+  expect(screen.queryByRole('heading', { name: 'Apartment' })).not.toBeInTheDocument()
 })
 
 it('desktop: the properties panel is always present', () => {

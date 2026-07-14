@@ -20,17 +20,23 @@ export default function App() {
   const selection = usePlanStore((s) => s.selection)
   const apartmentPropsOpen = usePlanStore((s) => s.apartmentPropsOpen)
   const setCatalogOpen = usePlanStore((s) => s.setCatalogOpen)
+  const setApartmentPropsOpen = usePlanStore((s) => s.setApartmentPropsOpen)
   const isMobile = useIsMobileLayout()
 
-  // Mobile shows one bottom sheet at a time: a FRESH selection dismisses the catalog,
-  // but opening the catalog over an existing selection must win — so react only to
-  // selection changes (the store creates a new selection object on every select).
+  // Mobile shows one bottom sheet at a time: a FRESH selection dismisses the catalog
+  // and the Apartment sheet (otherwise a later deselect would resurface the stale
+  // Apartment sheet), but opening the catalog over an existing selection must win —
+  // so react only to selection changes (the store creates a new selection object on
+  // every select).
   const prevSelection = useRef(selection)
   useEffect(() => {
     const changed = selection !== prevSelection.current
     prevSelection.current = selection
-    if (isMobile && selection && changed && catalogOpen) setCatalogOpen(false)
-  }, [isMobile, selection, catalogOpen, setCatalogOpen])
+    if (isMobile && selection && changed) {
+      if (catalogOpen) setCatalogOpen(false)
+      if (apartmentPropsOpen) setApartmentPropsOpen(false)
+    }
+  }, [isMobile, selection, catalogOpen, apartmentPropsOpen, setCatalogOpen, setApartmentPropsOpen])
 
   const showCatalog = mode === '2d' && catalogOpen
   const showProperties = isMobile
