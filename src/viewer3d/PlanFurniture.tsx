@@ -5,7 +5,7 @@ import { catalogItem } from '../model/catalog'
 import type { Plan, PlacedItem } from '../model/types'
 import { useToast } from '../ui/toast'
 import { floorItemTransform, wallItemTransform, type ItemTransform } from './furniture'
-import { applyTint, instantiateModel, loadFurnitureModel } from './furnitureModels'
+import { applyTint, disposeInstanceMaterials, instantiateModel, loadFurnitureModel } from './furnitureModels'
 
 const failedOnce = new Set<string>()
 
@@ -52,6 +52,12 @@ function FurnitureItem({ item, plan }: { item: PlacedItem; plan: Plan }) {
   useEffect(() => {
     if (model) applyTint(model, cat?.recolorMaterial, item.color)
   }, [model, cat, item.color])
+
+  useEffect(() => {
+    return () => {
+      if (model) disposeInstanceMaterials(model)
+    }
+  }, [model])
 
   const t = item.mount === 'floor' ? floorItemTransform(item) : wallItemTransform(item, plan)
   if (!t || !cat) return null

@@ -67,6 +67,14 @@ export function instantiateModel(template: Group): Group {
   return clone
 }
 
+export function disposeInstanceMaterials(instance: Group): void {
+  instance.traverse((obj) => {
+    if (obj instanceof Mesh && obj.material instanceof MeshStandardMaterial) {
+      obj.material.dispose()
+    }
+  })
+}
+
 export function applyTint(instance: Group, materialName: string | undefined, color: string | undefined): void {
   if (!materialName) return
   instance.traverse((obj) => {
