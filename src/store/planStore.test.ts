@@ -295,4 +295,18 @@ describe('furniture actions', () => {
     st().setPlacing('window')
     expect(st().placingFurniture).toBeNull()
   })
+
+  it('closing the catalog disarms placement; opening it leaves placement untouched', () => {
+    const st = () => usePlanStore.getState()
+    st().setPlacingFurniture('sofa-3seat')
+    expect(st().placingFurniture).toBe('sofa-3seat')
+    st().setCatalogOpen(false)
+    expect(st().placingFurniture).toBeNull()
+    expect(st().catalogOpen).toBe(false)
+
+    st().setPlacingFurniture('sofa-3seat')
+    st().setCatalogOpen(true)
+    expect(st().placingFurniture).toBe('sofa-3seat')
+    expect(st().catalogOpen).toBe(true)
+  })
 })

@@ -66,7 +66,7 @@ function FurnitureProps({ item }: { item: PlacedItem }) {
           </span>
         </label>
       )}
-      <button onClick={() => deleteFurniture(item.id)}>Delete {cat.name.toLowerCase()}</button>
+      <button onClick={() => deleteFurniture(item.id)}>Delete furniture</button>
     </>
   )
 }

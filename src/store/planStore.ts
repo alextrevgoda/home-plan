@@ -259,7 +259,11 @@ export const usePlanStore = create<PlanState>((set) => ({
   placingFurniture: null,
   catalogOpen: false,
 
-  setCatalogOpen: (catalogOpen) => set({ catalogOpen }),
+  setCatalogOpen: (catalogOpen) =>
+    set((s) => ({
+      catalogOpen,
+      placingFurniture: catalogOpen ? s.placingFurniture : null,
+    })),
 
   setPlacingFurniture: (placingFurniture) =>
     set({ placingFurniture, placing: null, selection: null }),
