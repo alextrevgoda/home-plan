@@ -1,12 +1,12 @@
 import { OrbitControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useEffect, useMemo, useState } from 'react'
-import { DoubleSide, RepeatWrapping, SRGBColorSpace, Texture, TextureLoader } from 'three'
+import { DoubleSide, RepeatWrapping, Shape, SRGBColorSpace, Texture, TextureLoader } from 'three'
 import { floorFinish } from '../model/catalog'
-import { polygonToRect } from '../model/geometry'
-import type { Opening, Plan, Rect, Room } from '../model/types'
+import type { Opening, Plan, Room } from '../model/types'
 import { usePlanStore } from '../store/planStore'
 import { useToast } from '../ui/toast'
+import { floorShape } from './floorShape'
 import { PlanFurniture } from './PlanFurniture'
 import { fillForOpening, wallSegmentsForRoom } from './walls'
 
@@ -63,23 +63,18 @@ export function Viewer3D() {
 }
 
 function RoomMesh({ room, plan }: { room: Room; plan: Plan }) {
-  const rect = polygonToRect(room.polygon)
+  const shape = useMemo(() => floorShape(room.polygon), [room.polygon])
   const finish = room.floorMaterial ? floorFinish(room.floorMaterial) : undefined
   return (
     <group>
-      {rect &&
-        (finish ? (
-          <TexturedFloor rect={rect} texturePath={finish.texturePath} fallbackColor={room.color} />
-        ) : (
-          <mesh
-            rotation-x={-Math.PI / 2}
-            position={[rect.x + rect.width / 2, 0.001, rect.y + rect.height / 2]}
-            receiveShadow
-          >
-            <planeGeometry args={[rect.width, rect.height]} />
-            <meshStandardMaterial color={room.color} />
-          </mesh>
-        ))}
+      {finish ? (
+        <TexturedFloor shape={shape} texturePath={finish.texturePath} fallbackColor={room.color} />
+      ) : (
+        <mesh rotation-x={-Math.PI / 2} position={[0, 0.001, 0]} receiveShadow>
+          <shapeGeometry args={[shape]} />
+          <meshStandardMaterial color={room.color} />
+        </mesh>
+      )}
       {wallSegmentsForRoom(room, plan).map((piece, i) =>
         room.wallColor ? (
           <mesh key={i} position={piece.center} rotation-y={piece.rotationY} castShadow receiveShadow>
@@ -107,11 +102,11 @@ function RoomMesh({ room, plan }: { room: Room; plan: Plan }) {
 }
 
 function TexturedFloor({
-  rect,
+  shape,
   texturePath,
   fallbackColor,
 }: {
-  rect: Rect
+  shape: Shape
   texturePath: string
   fallbackColor: string
 }) {
@@ -145,11 +140,11 @@ function TexturedFloor({
     const t = base.clone()
     t.wrapS = RepeatWrapping
     t.wrapT = RepeatWrapping
-    t.repeat.set(rect.width, rect.height)
+    t.repeat.set(1, 1)
     t.colorSpace = SRGBColorSpace
     t.needsUpdate = true
     return t
-  }, [base, rect.width, rect.height])
+  }, [base])
 
   // Dispose only the per-room clone; the cached base texture is shared across rooms.
   useEffect(() => {
@@ -161,20 +156,16 @@ function TexturedFloor({
   if (!texture) {
     if (!failed) return null
     return (
-      <mesh
-        rotation-x={-Math.PI / 2}
-        position={[rect.x + rect.width / 2, 0.001, rect.y + rect.height / 2]}
-        receiveShadow
-      >
-        <planeGeometry args={[rect.width, rect.height]} />
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.001, 0]} receiveShadow>
+        <shapeGeometry args={[shape]} />
         <meshStandardMaterial color={fallbackColor} />
       </mesh>
     )
   }
 
   return (
-    <mesh rotation-x={-Math.PI / 2} position={[rect.x + rect.width / 2, 0.001, rect.y + rect.height / 2]} receiveShadow>
-      <planeGeometry args={[rect.width, rect.height]} />
+    <mesh rotation-x={-Math.PI / 2} position={[0, 0.001, 0]} receiveShadow>
+      <shapeGeometry args={[shape]} />
       <meshStandardMaterial map={texture} />
     </mesh>
   )
