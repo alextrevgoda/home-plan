@@ -33,7 +33,7 @@ import {
   drawRotationHandle,
   type FurnitureGhost,
 } from './render'
-import { fitApartment, screenToWorld, zoomAt, type Viewport } from './viewport'
+import { fitApartment, recenterViewport, screenToWorld, zoomAt, type Viewport } from './viewport'
 
 function isTypingTarget(ev: KeyboardEvent) {
   const t = ev.target as HTMLElement | null
@@ -97,8 +97,12 @@ export function Editor2D() {
       // `resizeTo` only reacts to window resize events (pixi's ResizePlugin). Layout changes that
       // resize `host` without resizing the window — e.g. toggling the furniture catalog panel —
       // need an explicit refit, so observe the host element directly.
+      let lastSize = { width: app.screen.width, height: app.screen.height }
       const resizeObserver = new ResizeObserver(() => {
         app.resize()
+        const nextSize = { width: app.screen.width, height: app.screen.height }
+        viewport = recenterViewport(viewport, lastSize, nextSize)
+        lastSize = nextSize
         markDirty()
       })
       resizeObserver.observe(host)
