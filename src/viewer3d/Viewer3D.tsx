@@ -1,13 +1,27 @@
 import { OrbitControls } from '@react-three/drei'
-import { Canvas, useLoader } from '@react-three/fiber'
-import { Suspense, useMemo } from 'react'
-import { DoubleSide, RepeatWrapping, SRGBColorSpace, TextureLoader } from 'three'
+import { Canvas } from '@react-three/fiber'
+import { useEffect, useMemo, useState } from 'react'
+import { DoubleSide, RepeatWrapping, SRGBColorSpace, Texture, TextureLoader } from 'three'
 import { floorFinish } from '../model/catalog'
 import { polygonToRect } from '../model/geometry'
 import type { Opening, Plan, Rect, Room } from '../model/types'
 import { usePlanStore } from '../store/planStore'
+import { useToast } from '../ui/toast'
 import { PlanFurniture } from './PlanFurniture'
 import { fillForOpening, wallSegmentsForRoom } from './walls'
+
+const failedTextureOnce = new Set<string>()
+const textureLoader = new TextureLoader()
+const textureCache = new Map<string, Promise<Texture>>()
+
+function loadFloorTexture(path: string): Promise<Texture> {
+  let p = textureCache.get(path)
+  if (!p) {
+    p = textureLoader.loadAsync(import.meta.env.BASE_URL + path)
+    textureCache.set(path, p)
+  }
+  return p
+}
 
 export function Viewer3D() {
   const plan = usePlanStore((s) => s.plan)
@@ -30,15 +44,13 @@ export function Viewer3D() {
           <meshStandardMaterial color="#cfd6dc" />
         </mesh>
 
-        <Suspense fallback={null}>
-          {plan.rooms.map((room) => (
-            <RoomMesh key={room.id} room={room} plan={plan} />
-          ))}
-          {plan.openings.map((opening) => (
-            <OpeningFillMesh key={opening.id} opening={opening} plan={plan} />
-          ))}
-          <PlanFurniture plan={plan} />
-        </Suspense>
+        {plan.rooms.map((room) => (
+          <RoomMesh key={room.id} room={room} plan={plan} />
+        ))}
+        {plan.openings.map((opening) => (
+          <OpeningFillMesh key={opening.id} opening={opening} plan={plan} />
+        ))}
+        <PlanFurniture plan={plan} />
       </group>
 
       <OrbitControls maxPolarAngle={Math.PI / 2 - 0.05} minDistance={2} maxDistance={80} />
@@ -53,7 +65,7 @@ function RoomMesh({ room, plan }: { room: Room; plan: Plan }) {
     <group>
       {rect &&
         (finish ? (
-          <TexturedFloor rect={rect} texturePath={finish.texturePath} />
+          <TexturedFloor rect={rect} texturePath={finish.texturePath} fallbackColor={room.color} />
         ) : (
           <mesh
             rotation-x={-Math.PI / 2}
@@ -74,9 +86,42 @@ function RoomMesh({ room, plan }: { room: Room; plan: Plan }) {
   )
 }
 
-function TexturedFloor({ rect, texturePath }: { rect: Rect; texturePath: string }) {
-  const base = useLoader(TextureLoader, import.meta.env.BASE_URL + texturePath)
+function TexturedFloor({
+  rect,
+  texturePath,
+  fallbackColor,
+}: {
+  rect: Rect
+  texturePath: string
+  fallbackColor: string
+}) {
+  const [base, setBase] = useState<Texture | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    setBase(null)
+    setFailed(false)
+    loadFloorTexture(texturePath).then(
+      (tex) => {
+        if (alive) setBase(tex)
+      },
+      () => {
+        if (!alive) return
+        setFailed(true)
+        if (!failedTextureOnce.has(texturePath)) {
+          failedTextureOnce.add(texturePath)
+          useToast.getState().show('Could not load the floor texture — showing the room color.')
+        }
+      },
+    )
+    return () => {
+      alive = false
+    }
+  }, [texturePath])
+
   const texture = useMemo(() => {
+    if (!base) return null
     const t = base.clone()
     t.wrapS = RepeatWrapping
     t.wrapT = RepeatWrapping
@@ -85,6 +130,28 @@ function TexturedFloor({ rect, texturePath }: { rect: Rect; texturePath: string 
     t.needsUpdate = true
     return t
   }, [base, rect.width, rect.height])
+
+  // Dispose only the per-room clone; the cached base texture is shared across rooms.
+  useEffect(() => {
+    return () => {
+      texture?.dispose()
+    }
+  }, [texture])
+
+  if (!texture) {
+    if (!failed) return null
+    return (
+      <mesh
+        rotation-x={-Math.PI / 2}
+        position={[rect.x + rect.width / 2, 0.001, rect.y + rect.height / 2]}
+        receiveShadow
+      >
+        <planeGeometry args={[rect.width, rect.height]} />
+        <meshStandardMaterial color={fallbackColor} />
+      </mesh>
+    )
+  }
+
   return (
     <mesh rotation-x={-Math.PI / 2} position={[rect.x + rect.width / 2, 0.001, rect.y + rect.height / 2]} receiveShadow>
       <planeGeometry args={[rect.width, rect.height]} />
