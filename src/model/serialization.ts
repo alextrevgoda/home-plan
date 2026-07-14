@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { catalogItem, floorFinish } from './catalog'
+import { clampFloorItemPosition } from './furniture'
 import { normalizeDeg, polygonArea, roundCm, roundDeg } from './geometry'
 import { clampOffset, roomEdge } from './openings'
 import type { Plan, PlacedItem } from './types'
@@ -143,14 +144,12 @@ export function normalizePlan(plan: Plan): Plan {
       height: roundCm(clamp(item.size.height, cat.sizeBounds.min.height, cat.sizeBounds.max.height)),
     }
     if (item.mount === 'floor') {
+      const rotation = roundDeg(normalizeDeg(item.rotation))
       return {
         ...item,
         size,
-        rotation: roundDeg(normalizeDeg(item.rotation)),
-        position: {
-          x: roundCm(clamp(item.position.x, 0, plan.apartment.width)),
-          y: roundCm(clamp(item.position.y, 0, plan.apartment.depth)),
-        },
+        rotation,
+        position: clampFloorItemPosition(item.position, rotation, size, plan.apartment),
       }
     }
     const room = plan.rooms.find((r) => r.id === item.roomId)
