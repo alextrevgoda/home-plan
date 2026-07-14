@@ -5,7 +5,7 @@ import { roundCm, polygonToRect } from '../model/geometry'
 import { floorItemCollides, floorItemInBounds, isSolidFloorItem, snapFloorItemToWall } from '../model/furniture'
 import { projectOntoEdge, roomEdge } from '../model/openings'
 import { collectSnapLines, snapMove, snapScalar, type SnapGuide, type SnapOptions } from '../model/snapping'
-import type { Rect, Vec2 } from '../model/types'
+import type { Rect, Room, Vec2 } from '../model/types'
 import { usePlanStore } from '../store/planStore'
 import { useToast } from '../ui/toast'
 import {
@@ -132,12 +132,10 @@ export function Editor2D() {
         edgeThreshold: 10 / viewport.scale,
       })
 
-      const otherRects = (excludeId: string): Rect[] =>
+      const otherRooms = (excludeId: string): Room[] =>
         usePlanStore
           .getState()
           .plan.rooms.filter((r) => r.id !== excludeId)
-          .map((r) => polygonToRect(r.polygon))
-          .filter((r): r is Rect => r !== null)
 
       app.stage.eventMode = 'static'
       app.stage.hitArea = app.screen
@@ -318,7 +316,7 @@ export function Editor2D() {
             guides = []
             store.updateRoomRect(activeDrag.roomId, raw)
           } else {
-            const lines = collectSnapLines(otherRects(activeDrag.roomId), store.plan.apartment)
+            const lines = collectSnapLines(otherRooms(activeDrag.roomId), store.plan.apartment)
             const snapped = snapMove(raw, lines, snapOpts())
             guides = snapped.guides
             store.updateRoomRect(activeDrag.roomId, { ...raw, x: snapped.x, y: snapped.y })
@@ -337,7 +335,7 @@ export function Editor2D() {
           guides = []
 
           if (!altDown) {
-            const lines = collectSnapLines(otherRects(activeDrag.roomId), store.plan.apartment)
+            const lines = collectSnapLines(otherRooms(activeDrag.roomId), store.plan.apartment)
             const opts = snapOpts()
             if (activeDrag.handle.includes('e') || activeDrag.handle.includes('w')) {
               const sx = snapScalar(point.x, lines.xs, opts)

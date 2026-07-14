@@ -1,6 +1,7 @@
-import { MIN_ROOM_SIZE, normalizeRoundDeg, polygonToRect, roundCm } from '../model/geometry'
+import { MIN_ROOM_SIZE, normalizeRoundDeg, roundCm } from '../model/geometry'
 import { catalogItem, type Layer } from '../model/catalog'
 import { ROTATION_SNAP_DEG, footprintCorners, pointInConvexPolygon, wallItemSpan } from '../model/furniture'
+import { pointInPolygon } from '../model/polygon'
 import type { FloorItem, Plan, Rect, Room, Vec2 } from '../model/types'
 import { worldToScreen, screenToWorld, type Viewport } from './viewport'
 import { openingSpan, projectOntoEdge, roomEdge } from '../model/openings'
@@ -24,16 +25,7 @@ export function handlePositions(rect: Rect): Record<HandleId, Vec2> {
 
 export function hitRoom(rooms: Room[], world: Vec2): string | null {
   for (let i = rooms.length - 1; i >= 0; i--) {
-    const rect = polygonToRect(rooms[i].polygon)
-    if (
-      rect &&
-      world.x >= rect.x &&
-      world.x <= rect.x + rect.width &&
-      world.y >= rect.y &&
-      world.y <= rect.y + rect.height
-    ) {
-      return rooms[i].id
-    }
+    if (pointInPolygon(world, rooms[i].polygon)) return rooms[i].id
   }
   return null
 }

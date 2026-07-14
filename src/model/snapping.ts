@@ -1,5 +1,5 @@
 import { roundCm } from './geometry'
-import type { Apartment, Rect } from './types'
+import type { Apartment, Rect, Room } from './types'
 
 export interface SnapLines {
   xs: number[]
@@ -28,12 +28,17 @@ export interface MoveSnap {
   guides: SnapGuide[]
 }
 
-export function collectSnapLines(others: Rect[], apartment: Apartment): SnapLines {
+export function collectSnapLines(rooms: Room[], apartment: Apartment): SnapLines {
   const xs = [0, apartment.width]
   const ys = [0, apartment.depth]
-  for (const r of others) {
-    xs.push(r.x, r.x + r.width)
-    ys.push(r.y, r.y + r.height)
+  for (const room of rooms) {
+    const n = room.polygon.length
+    for (let i = 0; i < n; i++) {
+      const a = room.polygon[i]
+      const b = room.polygon[(i + 1) % n]
+      if (a.x === b.x) xs.push(a.x)
+      else ys.push(a.y)
+    }
   }
   return { xs, ys }
 }

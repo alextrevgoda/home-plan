@@ -42,6 +42,29 @@ describe('hitRoom', () => {
   it('returns null on empty space', () => {
     expect(hitRoom([roomAt(0, 0, 1, 1, 'a')], { x: 5, y: 5 })).toBeNull()
   })
+
+  const lRoom: Room = {
+    id: 'l',
+    name: 'L',
+    color: '#8ecae6',
+    polygon: [
+      { x: 0, y: 0 },
+      { x: 2, y: 0 },
+      { x: 2, y: 1 },
+      { x: 4, y: 1 },
+      { x: 4, y: 3 },
+      { x: 0, y: 3 },
+    ],
+  }
+
+  it('misses the notch cut out of an L-shaped room', () => {
+    expect(hitRoom([lRoom], { x: 3, y: 0.5 })).toBeNull()
+  })
+
+  it('hits inside the L-shaped room arm', () => {
+    expect(hitRoom([lRoom], { x: 1, y: 0.5 })).toBe('l')
+    expect(hitRoom([lRoom], { x: 3, y: 2 })).toBe('l')
+  })
 })
 
 describe('hitHandle', () => {
