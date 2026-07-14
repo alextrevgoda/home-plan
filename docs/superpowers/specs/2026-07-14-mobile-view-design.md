@@ -27,6 +27,7 @@ Desktop at ≥769px stays pixel-identical to today.
   - Catalog opens as a taller sheet (~55%) when Furniture is toggled.
   - Only one sheet is visible at a time: opening the catalog wins over a selection sheet (explicit user action); selecting something closes the catalog sheet **and clears `placingFurniture`** (this also fixes the known deferred bug where closing the catalog didn't disarm placement).
   - The canvas stays visible and interactive above the sheet; sheets overlay rather than squeeze, so no canvas refit is needed when they open.
+  - Apartment-level properties (width/depth/wall height) are shown on desktop whenever nothing is selected; on mobile the sheet only appears for selections, so a mobile-only "Apartment" toolbar toggle opens the same properties sheet with the apartment fields.
 - **Height:** app shell uses `100dvh` so the iOS Safari collapsing address bar doesn't produce dead space or a clipped toolbar.
 - **Viewport refit on window resize / orientation change** is added (previously a deferred follow-up).
 
