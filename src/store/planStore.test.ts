@@ -296,3 +296,32 @@ describe('furniture actions', () => {
     expect(st().placingFurniture).toBeNull()
   })
 })
+
+describe('setCatalogOpen', () => {
+  it('clears placingFurniture when the catalog closes', () => {
+    const s = usePlanStore.getState()
+    s.setCatalogOpen(true)
+    s.setPlacingFurniture('sofa-3seat')
+    s.setCatalogOpen(false)
+    expect(usePlanStore.getState().placingFurniture).toBeNull()
+    expect(usePlanStore.getState().catalogOpen).toBe(false)
+  })
+
+  it('keeps placingFurniture while the catalog stays open', () => {
+    const s = usePlanStore.getState()
+    s.setCatalogOpen(true)
+    s.setPlacingFurniture('sofa-3seat')
+    s.setCatalogOpen(true)
+    expect(usePlanStore.getState().placingFurniture).toBe('sofa-3seat')
+  })
+})
+
+describe('apartmentPropsOpen', () => {
+  it('defaults closed and toggles via the setter', () => {
+    usePlanStore.setState({ apartmentPropsOpen: false })
+    usePlanStore.getState().setApartmentPropsOpen(true)
+    expect(usePlanStore.getState().apartmentPropsOpen).toBe(true)
+    usePlanStore.getState().setApartmentPropsOpen(false)
+    expect(usePlanStore.getState().apartmentPropsOpen).toBe(false)
+  })
+})
