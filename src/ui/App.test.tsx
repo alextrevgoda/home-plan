@@ -14,7 +14,15 @@ vi.mock('../viewer3d/Viewer3D', () => ({
 }))
 
 beforeEach(() => {
-  usePlanStore.setState({ plan: createDefaultPlan(), selection: null, mode: '2d', placing: null })
+  usePlanStore.setState({
+    plan: createDefaultPlan(),
+    selection: null,
+    mode: '2d',
+    placing: null,
+    placingFurniture: null,
+    catalogOpen: false,
+    apartmentPropsOpen: false,
+  })
 })
 
 // @testing-library/react's auto-cleanup relies on a global `afterEach`, which
@@ -22,7 +30,24 @@ beforeEach(() => {
 // register it explicitly to keep renders isolated between tests.
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
 })
+
+function mockMobileLayout() {
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: query === '(max-width: 768px)',
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      }) as unknown as MediaQueryList,
+  )
+}
 
 it('renders the app title', () => {
   render(<App />)
@@ -107,4 +132,75 @@ it('shows sill height for windows and deletes the opening from the panel', () =>
   expect(screen.getByLabelText('Sill height (m)')).toBeInTheDocument()
   fireEvent.click(screen.getByText('Delete window'))
   expect(usePlanStore.getState().plan.openings).toHaveLength(0)
+})
+
+it('mobile: hides the properties panel until something is selected', () => {
+  mockMobileLayout()
+  render(<App />)
+  expect(screen.queryByRole('heading', { name: 'Apartment' })).not.toBeInTheDocument()
+  act(() => {
+    usePlanStore.getState().addRoom()
+  })
+  expect(screen.getByRole('heading', { name: 'Room' })).toBeInTheDocument()
+})
+
+it('mobile: the Apartment toolbar button opens apartment properties', () => {
+  mockMobileLayout()
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Apartment' }))
+  expect(screen.getByRole('heading', { name: 'Apartment' })).toBeInTheDocument()
+})
+
+it('mobile: selecting something closes the catalog sheet', () => {
+  mockMobileLayout()
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Furniture' }))
+  expect(screen.getByRole('tablist')).toBeInTheDocument()
+  act(() => {
+    usePlanStore.getState().addRoom() // addRoom selects the new room
+  })
+  expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Room' })).toBeInTheDocument()
+})
+
+it('mobile: an open catalog wins over a selection sheet', () => {
+  mockMobileLayout()
+  render(<App />)
+  act(() => {
+    usePlanStore.getState().addRoom()
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Furniture' }))
+  expect(screen.getByRole('tablist')).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Room' })).not.toBeInTheDocument()
+})
+
+it('mobile: the sheet close button deselects and closes', () => {
+  mockMobileLayout()
+  render(<App />)
+  act(() => {
+    usePlanStore.getState().addRoom()
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Close panel' }))
+  expect(usePlanStore.getState().selection).toBeNull()
+  expect(screen.queryByRole('heading', { name: 'Room' })).not.toBeInTheDocument()
+})
+
+it('mobile: a fresh selection closes a stale Apartment sheet so deselecting later does not resurface it', () => {
+  mockMobileLayout()
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Apartment' }))
+  expect(screen.getByRole('heading', { name: 'Apartment' })).toBeInTheDocument()
+  act(() => {
+    usePlanStore.getState().addRoom() // fresh selection while the Apartment sheet is open
+  })
+  expect(screen.getByRole('heading', { name: 'Room' })).toBeInTheDocument()
+  act(() => {
+    usePlanStore.getState().selectRoom(null)
+  })
+  expect(screen.queryByRole('heading', { name: 'Apartment' })).not.toBeInTheDocument()
+})
+
+it('desktop: the properties panel is always present', () => {
+  render(<App />)
+  expect(screen.getByRole('heading', { name: 'Apartment' })).toBeInTheDocument()
 })

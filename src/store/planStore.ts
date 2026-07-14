@@ -57,6 +57,8 @@ export interface PlanState {
   catalogOpen: boolean
   setCatalogOpen: (open: boolean) => void
   setPlacingFurniture: (catalogId: string | null) => void
+  apartmentPropsOpen: boolean
+  setApartmentPropsOpen: (open: boolean) => void
   selectFurniture: (id: string) => void
   placeFurniture: (catalogId: string, placement: Placement) => string
   moveFloorItem: (id: string, position: Vec2, rotation?: number) => void
@@ -298,11 +300,14 @@ export const usePlanStore = create<PlanState>((set) => ({
   placingFurniture: null,
   catalogOpen: false,
 
+  // Closing the catalog also disarms furniture placement — an armed ghost with no
+  // visible catalog is disorienting and was a long-standing papercut.
   setCatalogOpen: (catalogOpen) =>
-    set((s) => ({
-      catalogOpen,
-      placingFurniture: catalogOpen ? s.placingFurniture : null,
-    })),
+    set((s) => ({ catalogOpen, placingFurniture: catalogOpen ? s.placingFurniture : null })),
+
+  apartmentPropsOpen: false,
+
+  setApartmentPropsOpen: (apartmentPropsOpen) => set({ apartmentPropsOpen }),
 
   setPlacingFurniture: (placingFurniture) =>
     set({ placingFurniture, placing: null, selection: null }),

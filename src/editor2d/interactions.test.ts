@@ -8,6 +8,7 @@ import {
   hitFurniture,
   hitOpening,
   hitPolygonHandle,
+  hitRadius,
   hitRoom,
   hitRotationHandle,
   nearestEdge,
@@ -195,5 +196,14 @@ describe('rotation handle', () => {
     const free = rotationFromPointer(item, viewport, { x: 300, y: 208 }, false)
     expect(free).toBeGreaterThan(90)
     expect(free).toBeLessThan(95)
+  })
+})
+
+describe('hitRadius', () => {
+  it('doubles the base radius for touch and keeps it otherwise', () => {
+    expect(hitRadius(8, 'touch')).toBe(16)
+    expect(hitRadius(8, 'mouse')).toBe(8)
+    expect(hitRadius(10, 'pen')).toBe(10)
+    expect(hitRadius(9, undefined)).toBe(9)
   })
 })

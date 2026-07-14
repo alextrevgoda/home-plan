@@ -7,6 +7,8 @@ import { NumberField } from './NumberField'
 export function PropertiesPanel() {
   const plan = usePlanStore((s) => s.plan)
   const selection = usePlanStore((s) => s.selection)
+  const selectRoom = usePlanStore((s) => s.selectRoom)
+  const setApartmentPropsOpen = usePlanStore((s) => s.setApartmentPropsOpen)
   const furniture =
     selection?.kind === 'furniture' ? plan.furniture.find((f) => f.id === selection.id) : undefined
   const room =
@@ -16,6 +18,16 @@ export function PropertiesPanel() {
 
   return (
     <aside className="panel">
+      <button
+        className="sheet-close mobile-only"
+        aria-label="Close panel"
+        onClick={() => {
+          selectRoom(null)
+          setApartmentPropsOpen(false)
+        }}
+      >
+        ✕
+      </button>
       {furniture ? (
         <FurnitureProps item={furniture} />
       ) : opening ? (

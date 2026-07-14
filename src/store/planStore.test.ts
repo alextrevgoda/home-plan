@@ -311,6 +311,16 @@ describe('furniture actions', () => {
   })
 })
 
+describe('apartmentPropsOpen', () => {
+  it('defaults closed and toggles via the setter', () => {
+    usePlanStore.setState({ apartmentPropsOpen: false })
+    usePlanStore.getState().setApartmentPropsOpen(true)
+    expect(usePlanStore.getState().apartmentPropsOpen).toBe(true)
+    usePlanStore.getState().setApartmentPropsOpen(false)
+    expect(usePlanStore.getState().apartmentPropsOpen).toBe(false)
+  })
+})
+
 describe('polygon room actions', () => {
   const setupRoom = () => {
     const id = usePlanStore.getState().addRoom() // 3×3 rect centered in the apartment

@@ -37,9 +37,13 @@ export function CatalogPanel() {
   const [category, setCategory] = useState<Category>('bedroom')
   const placingFurniture = usePlanStore((s) => s.placingFurniture)
   const setPlacingFurniture = usePlanStore((s) => s.setPlacingFurniture)
+  const setCatalogOpen = usePlanStore((s) => s.setCatalogOpen)
 
   return (
     <aside className="catalog">
+      <button className="sheet-close mobile-only" aria-label="Close catalog" onClick={() => setCatalogOpen(false)}>
+        ✕
+      </button>
       <div className="catalog-tabs" role="tablist">
         {CATEGORIES.map(([id, label]) => (
           <button
