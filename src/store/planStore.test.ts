@@ -310,3 +310,56 @@ describe('furniture actions', () => {
     expect(st().catalogOpen).toBe(true)
   })
 })
+
+describe('polygon room actions', () => {
+  const setupRoom = () => {
+    const id = usePlanStore.getState().addRoom() // 3×3 rect centered in the apartment
+    return id
+  }
+
+  it('moveRoom translates; invalid results are no-ops', () => {
+    const id = setupRoom()
+    const st = () => usePlanStore.getState()
+    const before = st().plan.rooms[0].polygon.map((p) => ({ ...p }))
+    st().moveRoom(id, { x: 0.5, y: 0 })
+    expect(st().plan.rooms[0].polygon[0].x).toBe(before[0].x + 0.5)
+    st().moveRoom(id, { x: Number.NaN, y: 0 })
+    expect(st().plan.rooms[0].polygon[0].x).toBe(before[0].x + 0.5)
+  })
+
+  it('split + push produce an L; merge at drag end restores after flush push', () => {
+    const id = setupRoom()
+    const st = () => usePlanStore.getState()
+    st().splitRoomEdge(id, 0, 1.5)
+    expect(st().plan.rooms[0].polygon).toHaveLength(5)
+    const topY = st().plan.rooms[0].polygon[0].y
+    st().pushRoomEdge(id, 0, topY + 1)
+    expect(st().plan.rooms[0].polygon.length).toBeGreaterThanOrEqual(6)
+    st().pushRoomEdge(id, 0, topY)
+    st().mergeRoomCollinear(id)
+    expect(st().plan.rooms[0].polygon).toHaveLength(4)
+  })
+
+  it('rejects invalid pushes and splits as no-ops', () => {
+    const id = setupRoom()
+    const st = () => usePlanStore.getState()
+    const before = st().plan.rooms[0].polygon
+    const topY = before[0].y
+    st().pushRoomEdge(id, 0, topY + 3) // through the opposite wall
+    expect(st().plan.rooms[0].polygon).toEqual(before)
+    st().splitRoomEdge(id, 0, 0.02)
+    expect(st().plan.rooms[0].polygon).toEqual(before)
+  })
+
+  it('moveRoomVertex on a rect corner matches updateRoomRect semantics', () => {
+    const id = setupRoom()
+    const st = () => usePlanStore.getState()
+    const p0 = st().plan.rooms[0].polygon[0]
+    st().moveRoomVertex(id, 0, { x: p0.x + 0.5, y: p0.y + 0.5 })
+    const rect = polygonToRect(st().plan.rooms[0].polygon)!
+    expect(rect.x).toBe(p0.x + 0.5)
+    expect(rect.y).toBe(p0.y + 0.5)
+    expect(rect.width).toBe(2.5)
+    expect(rect.height).toBe(2.5)
+  })
+})
