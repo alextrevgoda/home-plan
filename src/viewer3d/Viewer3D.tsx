@@ -34,8 +34,10 @@ export function Viewer3D() {
       style={{ position: 'absolute', inset: 0 }}
     >
       <color attach="background" args={['#e8ecef']} />
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[width, 12, depth]} intensity={1.4} castShadow />
+      <ambientLight intensity={0.45} />
+      <hemisphereLight args={['#f2f6ff', '#8d8574', 1.05]} />
+      <directionalLight position={[width, 12, depth]} intensity={1.25} castShadow />
+      <directionalLight position={[-width * 0.4, 8, -depth * 0.4]} intensity={0.65} />
 
       <group position={[-width / 2, 0, -depth / 2]}>
         {/* ground plane, slightly below floors */}
