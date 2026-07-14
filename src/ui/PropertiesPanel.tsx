@@ -1,4 +1,4 @@
-import { polygonToRect } from '../model/geometry'
+import { polygonArea, polygonToRect } from '../model/geometry'
 import { catalogItem, FLOOR_MATERIALS } from '../model/catalog'
 import type { Apartment, Opening, PlacedItem, Room } from '../model/types'
 import { usePlanStore } from '../store/planStore'
@@ -96,7 +96,6 @@ function RoomProps({ room }: { room: Room }) {
   const deleteRoom = usePlanStore((s) => s.deleteRoom)
 
   const rect = polygonToRect(room.polygon)
-  if (!rect) return null
 
   return (
     <>
@@ -105,18 +104,23 @@ function RoomProps({ room }: { room: Room }) {
         Name
         <input value={room.name} onChange={(e) => renameRoom(room.id, e.target.value)} />
       </label>
-      <NumberField label="X (m)" value={rect.x} onCommit={(v) => updateRoomRect(room.id, { ...rect, x: v })} />
-      <NumberField label="Y (m)" value={rect.y} onCommit={(v) => updateRoomRect(room.id, { ...rect, y: v })} />
-      <NumberField
-        label="Width (m)"
-        value={rect.width}
-        onCommit={(v) => updateRoomRect(room.id, { ...rect, width: v })}
-      />
-      <NumberField
-        label="Height (m)"
-        value={rect.height}
-        onCommit={(v) => updateRoomRect(room.id, { ...rect, height: v })}
-      />
+      <div className="field">Area<span>{polygonArea(room.polygon).toFixed(1)} m²</span></div>
+      {rect && (
+        <>
+          <NumberField label="X (m)" value={rect.x} onCommit={(v) => updateRoomRect(room.id, { ...rect, x: v })} />
+          <NumberField label="Y (m)" value={rect.y} onCommit={(v) => updateRoomRect(room.id, { ...rect, y: v })} />
+          <NumberField
+            label="Width (m)"
+            value={rect.width}
+            onCommit={(v) => updateRoomRect(room.id, { ...rect, width: v })}
+          />
+          <NumberField
+            label="Height (m)"
+            value={rect.height}
+            onCommit={(v) => updateRoomRect(room.id, { ...rect, height: v })}
+          />
+        </>
+      )}
       <label className="field">
         Color
         <input type="color" value={room.color} onChange={(e) => setRoomColor(room.id, e.target.value)} />
