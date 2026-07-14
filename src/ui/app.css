@@ -27,6 +27,43 @@ html, body, #root { height: 100%; margin: 0; font-family: system-ui, sans-serif;
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: 13px; }
 .field input { padding: 6px 8px; border: 1px solid #c7ccd4; border-radius: 6px; font-size: 13px; }
 
+.catalog {
+  width: 190px;
+  overflow-y: auto;
+  border-right: 1px solid #d8dce1;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+.catalog-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px;
+  border-bottom: 1px solid #e3e6ea;
+}
+.catalog-tabs button {
+  font-size: 11px;
+  padding: 3px 7px;
+}
+.catalog-items {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px;
+}
+.catalog-items button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  padding: 6px 2px;
+}
+.catalog button.active {
+  outline: 2px solid #1d4ed8;
+}
+
 .toast {
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
   background: #1f2430; color: #fff; padding: 10px 16px; border-radius: 8px; z-index: 10;
