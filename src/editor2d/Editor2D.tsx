@@ -1,26 +1,27 @@
 import { Application, Container, Graphics, type FederatedPointerEvent } from 'pixi.js'
 import { useEffect, useRef } from 'react'
 import { catalogItem } from '../model/catalog'
-import { roundCm, polygonToRect } from '../model/geometry'
+import { roundCm } from '../model/geometry'
 import { floorItemCollides, floorItemInBounds, isSolidFloorItem, snapFloorItemToWall } from '../model/furniture'
 import { projectOntoEdge, roomEdge } from '../model/openings'
+import { polygonBounds } from '../model/polygon'
 import { collectSnapLines, snapMove, snapScalar, type SnapGuide, type SnapOptions } from '../model/snapping'
-import type { Rect, Vec2 } from '../model/types'
+import type { Plan, Rect, Room, Vec2 } from '../model/types'
 import { usePlanStore } from '../store/planStore'
 import { useToast } from '../ui/toast'
 import { isDoubleTap, pinchTransform, type Tap } from './gestures'
 import {
-  applyResize,
+  edgeIsHorizontal,
   hitFurniture,
-  hitHandle,
   hitOpening,
+  hitPolygonHandle,
   hitRadius,
   hitRoom,
   hitRotationHandle,
   nearestEdge,
+  nearestRoomEdge,
   rotationFromPointer,
   type EdgeHit,
-  type HandleId,
 } from './interactions'
 import {
   drawBoundary,
@@ -29,8 +30,8 @@ import {
   drawFurnitureGhost,
   drawGrid,
   drawGuides,
-  drawHandles,
   drawOpenings,
+  drawPolygonHandles,
   drawRooms,
   drawRotationHandle,
   type FurnitureGhost,
@@ -114,15 +115,27 @@ export function Editor2D() {
       let panning: { lastX: number; lastY: number; downX: number; downY: number } | null = null
       let spaceDown = false
 
+      // Every mutating drag kind records its drag-start state so a second finger joining
+      // mid-drag (pinch) can revert the plan exactly (see revertDragToStart). Room moves
+      // record the start bounds origin; pushEdge/moveVertex record the whole drag-start
+      // plan, because those store ops clamp opening/wall-item offsets as edges shrink and
+      // re-running the op with the start value cannot restore them. Plans are immutable,
+      // so holding the reference is free.
       type DragState =
         | { kind: 'idle' }
-        | { kind: 'move'; roomId: string; grabOffset: Vec2; start: Rect }
-        | { kind: 'resize'; roomId: string; handle: HandleId; start: Rect }
+        | { kind: 'move'; roomId: string; grabOffset: Vec2; start: Vec2 }
+        | { kind: 'pushEdge'; roomId: string; edgeIndex: number; horizontal: boolean; startPlan: Plan }
+        | { kind: 'moveVertex'; roomId: string; vertexIndex: number; startPlan: Plan }
         | { kind: 'moveOpening'; openingId: string; start: number }
         | { kind: 'moveFloorItem'; itemId: string; grabOffset: Vec2; start: { position: Vec2; rotation: number } }
         | { kind: 'moveWallItem'; itemId: string; start: { roomId: string; edgeIndex: number; offset: number } }
         | { kind: 'rotateFurniture'; itemId: string; start: { position: Vec2; rotation: number } }
       let drag: DragState = { kind: 'idle' }
+      // Tracks whether the current pushEdge/moveVertex drag has actually mutated the plan (as
+      // opposed to every push being rejected below the engage threshold, or a zero-movement
+      // handle click). endInteraction only merges collinear vertices when this is true — otherwise
+      // a no-op drag would silently discard a pending split (see finding I1).
+      let dragMutated = false
       // touch gesture state: active touch contacts, whether a two-finger pinch is
       // running, the previous tap for double-tap detection, and an armed-placement
       // tap that's deferred until pointerup (see pendingPlacement below)
@@ -130,6 +143,16 @@ export function Editor2D() {
       let pinching = false
       let lastTap: Tap | null = null
       let pendingPlacement: { pointerId: number; x: number; y: number } | null = null
+      // pinchSession stays true from the moment a second finger joins until the next fresh
+      // first-finger contact — pixi still emits a pointertap for each pinch finger's lift,
+      // and those must never count toward a double-tap (see the pointertap handler).
+      let pinchSession = false
+      // Down position of the current single-finger touch, so the pointertap handler can tell
+      // a genuine tap from a pan/drag that happened to end near where it started in time.
+      let touchDown: { pointerId: number; x: number; y: number } | null = null
+      // Set whenever an armed placement consumed a press (placed, or missed and disarmed).
+      // The pointertap fired by that same press must not count toward a double gesture.
+      let justPlaced = false
       let hoverEdge: EdgeHit | null = null
       let ghost: FurnitureGhost | null = null
       let guides: SnapGuide[] = []
@@ -142,12 +165,10 @@ export function Editor2D() {
         edgeThreshold: 10 / viewport.scale,
       })
 
-      const otherRects = (excludeId: string): Rect[] =>
+      const otherRooms = (excludeId: string): Room[] =>
         usePlanStore
           .getState()
           .plan.rooms.filter((r) => r.id !== excludeId)
-          .map((r) => polygonToRect(r.polygon))
-          .filter((r): r is Rect => r !== null)
 
       app.stage.eventMode = 'static'
       app.stage.hitArea = app.screen
@@ -192,8 +213,18 @@ export function Editor2D() {
       // revertDragIfColliding so desktop behavior is unchanged.
       const revertDragToStart = () => {
         const store = usePlanStore.getState()
-        if (drag.kind === 'move' || drag.kind === 'resize') {
-          store.updateRoomRect(drag.roomId, drag.start)
+        if (drag.kind === 'move') {
+          const activeDrag = drag
+          const room = store.plan.rooms.find((r) => r.id === activeDrag.roomId)
+          if (room) {
+            const b = polygonBounds(room.polygon)
+            store.moveRoom(activeDrag.roomId, { x: roundCm(activeDrag.start.x - b.x), y: roundCm(activeDrag.start.y - b.y) })
+          }
+        } else if (drag.kind === 'pushEdge' || drag.kind === 'moveVertex') {
+          // pushRoomEdge/moveRoomVertex clamp opening and wall-item offsets as edges
+          // shrink, so replaying the op with the start value cannot restore them —
+          // restore the exact drag-start plan snapshot instead.
+          usePlanStore.setState({ plan: drag.startPlan })
         } else if (drag.kind === 'moveOpening') {
           store.moveOpening(drag.openingId, drag.start)
         } else if (drag.kind === 'moveWallItem') {
@@ -209,6 +240,7 @@ export function Editor2D() {
       const executeOpeningPlacement = (screen: Vec2, pointerType?: string) => {
         const store = usePlanStore.getState()
         if (!store.placing) return
+        justPlaced = true
         const hit = nearestEdge(store.plan, viewport, screen, hitRadius(10, pointerType))
         if (hit) store.addOpening(store.placing, hit.roomId, hit.edgeIndex, hit.offset)
         else store.setPlacing(null)
@@ -220,6 +252,7 @@ export function Editor2D() {
       const executeFurniturePlacement = (screen: Vec2, pointerType?: string) => {
         const store = usePlanStore.getState()
         if (!store.placingFurniture) return
+        justPlaced = true
         const world = screenToWorld(viewport, screen)
         const cat = catalogItem(store.placingFurniture)
         if (cat?.mount === 'floor') {
@@ -248,13 +281,21 @@ export function Editor2D() {
         if (e.pointerType === 'touch') {
           if (touchPoints.size >= 2) return // ignore 3rd+ finger entirely
           touchPoints.set(e.pointerId, { x: e.global.x, y: e.global.y })
+          if (touchPoints.size === 1) {
+            // fresh touch gesture: remember where it started (tap-vs-drag telling in
+            // pointertap) and clear the previous gesture's pinch suppression
+            touchDown = { pointerId: e.pointerId, x: e.global.x, y: e.global.y }
+            pinchSession = false
+          }
           if (touchPoints.size === 2) {
             // Second finger: abandon any one-finger interaction and navigate instead.
             revertDragToStart()
             drag = { kind: 'idle' }
+            dragMutated = false
             guides = []
             panning = null
             pinching = true
+            pinchSession = true
             pendingPlacement = null
             lastTap = null
             markDirty()
@@ -275,7 +316,6 @@ export function Editor2D() {
         if (store.placing) {
           if (e.pointerType === 'touch') {
             pendingPlacement = { pointerId: e.pointerId, x: screen.x, y: screen.y }
-            lastTap = null
             panning = { lastX: screen.x, lastY: screen.y, downX: screen.x, downY: screen.y }
             markDirty()
             return
@@ -289,7 +329,6 @@ export function Editor2D() {
         if (store.placingFurniture) {
           if (e.pointerType === 'touch') {
             pendingPlacement = { pointerId: e.pointerId, x: screen.x, y: screen.y }
-            lastTap = null
             panning = { lastX: screen.x, lastY: screen.y, downX: screen.x, downY: screen.y }
             markDirty()
             return
@@ -304,7 +343,6 @@ export function Editor2D() {
             ? store.plan.furniture.find((f) => f.id === store.selection!.id)
             : undefined
         if (selFurniture?.mount === 'floor' && hitRotationHandle(selFurniture, viewport, screen, hitRadius(9, e.pointerType))) {
-          if (e.pointerType === 'touch') lastTap = null
           drag = {
             kind: 'rotateFurniture',
             itemId: selFurniture.id,
@@ -316,7 +354,6 @@ export function Editor2D() {
         // openings are small targets on walls — they win over room bodies
         const openingId = hitOpening(store.plan, viewport, screen, hitRadius(8, e.pointerType))
         if (openingId) {
-          if (e.pointerType === 'touch') lastTap = null
           const opening = store.plan.openings.find((o) => o.id === openingId)
           store.selectOpening(openingId)
           drag = { kind: 'moveOpening', openingId, start: opening ? opening.offset : 0 }
@@ -326,7 +363,6 @@ export function Editor2D() {
 
         const furnitureId = hitFurniture(store.plan, viewport, screen, hitRadius(8, e.pointerType))
         if (furnitureId) {
-          if (e.pointerType === 'touch') lastTap = null
           const item = store.plan.furniture.find((f) => f.id === furnitureId)!
           store.selectFurniture(furnitureId)
           if (item.mount === 'floor') {
@@ -348,31 +384,32 @@ export function Editor2D() {
         const sel = store.selection
         const selectedRoom =
           sel?.kind === 'room' ? store.plan.rooms.find((r) => r.id === sel.id) : undefined
-        const selectedRect = selectedRoom ? polygonToRect(selectedRoom.polygon) : null
-        if (selectedRoom && selectedRect) {
-          const handle = hitHandle(selectedRect, viewport, screen, hitRadius(8, e.pointerType))
+        if (selectedRoom) {
+          // touch pointers get the doubled hit radius on the polygon handles, exactly as
+          // they did on the old rect resize handles
+          const handle = hitPolygonHandle(selectedRoom, viewport, screen, hitRadius(8, e.pointerType))
           if (handle) {
-            if (e.pointerType === 'touch') lastTap = null
-            drag = { kind: 'resize', roomId: selectedRoom.id, handle, start: selectedRect }
+            dragMutated = false
+            drag =
+              handle.kind === 'edge'
+                ? {
+                    kind: 'pushEdge',
+                    roomId: selectedRoom.id,
+                    edgeIndex: handle.index,
+                    horizontal: edgeIsHorizontal(selectedRoom.polygon, handle.index),
+                    startPlan: store.plan,
+                  }
+                : { kind: 'moveVertex', roomId: selectedRoom.id, vertexIndex: handle.index, startPlan: store.plan }
             return
           }
         }
         const roomId = hitRoom(store.plan.rooms, world)
         store.selectRoom(roomId)
         if (roomId) {
-          if (e.pointerType === 'touch') lastTap = null
-          const rect = polygonToRect(store.plan.rooms.find((r) => r.id === roomId)!.polygon)
-          if (rect) drag = { kind: 'move', roomId, grabOffset: { x: world.x - rect.x, y: world.y - rect.y }, start: rect }
+          const b = polygonBounds(store.plan.rooms.find((r) => r.id === roomId)!.polygon)
+          drag = { kind: 'move', roomId, grabOffset: { x: world.x - b.x, y: world.y - b.y }, start: { x: b.x, y: b.y } }
         } else if (e.pointerType === 'touch') {
-          // empty canvas: one finger pans; a quick second tap refits the whole apartment
-          const tap: Tap = { x: e.global.x, y: e.global.y, time: performance.now() }
-          if (isDoubleTap(lastTap, tap)) {
-            viewport = fitApartment(app.screen.width, app.screen.height, store.plan.apartment)
-            lastTap = null
-            markDirty()
-            return
-          }
-          lastTap = tap
+          // empty canvas: one finger pans (double-tap refit lives in the pointertap handler)
           panning = { lastX: e.global.x, lastY: e.global.y, downX: e.global.x, downY: e.global.y }
         }
       }
@@ -443,53 +480,59 @@ export function Editor2D() {
 
         if (drag.kind === 'move') {
           const activeDrag = drag
-
           const store = usePlanStore.getState()
           const room = store.plan.rooms.find((r) => r.id === activeDrag.roomId)
-          const rect = room ? polygonToRect(room.polygon) : null
-          if (!rect) return
-
+          if (!room) return
+          const b = polygonBounds(room.polygon)
           const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
-          const raw: Rect = { ...rect, x: world.x - activeDrag.grabOffset.x, y: world.y - activeDrag.grabOffset.y }
-
-          if (altDown) {
-            guides = []
-            store.updateRoomRect(activeDrag.roomId, raw)
-          } else {
-            const lines = collectSnapLines(otherRects(activeDrag.roomId), store.plan.apartment)
+          const raw: Rect = { ...b, x: world.x - activeDrag.grabOffset.x, y: world.y - activeDrag.grabOffset.y }
+          let target = { x: raw.x, y: raw.y }
+          guides = []
+          if (!altDown) {
+            const lines = collectSnapLines(otherRooms(activeDrag.roomId), store.plan.apartment)
             const snapped = snapMove(raw, lines, snapOpts())
             guides = snapped.guides
-            store.updateRoomRect(activeDrag.roomId, { ...raw, x: snapped.x, y: snapped.y })
+            target = { x: snapped.x, y: snapped.y }
           }
+          store.moveRoom(activeDrag.roomId, { x: roundCm(target.x - b.x), y: roundCm(target.y - b.y) })
           markDirty()
         }
 
-        if (drag.kind === 'resize') {
+        if (drag.kind === 'pushEdge') {
           const activeDrag = drag
           const store = usePlanStore.getState()
-          const room = store.plan.rooms.find((r) => r.id === activeDrag.roomId)
-          const rect = room ? polygonToRect(room.polygon) : null
-          if (!rect) return
+          const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+          let coordinate = activeDrag.horizontal ? world.y : world.x
+          guides = []
+          if (!altDown) {
+            const lines = collectSnapLines(otherRooms(activeDrag.roomId), store.plan.apartment)
+            const snapped = snapScalar(coordinate, activeDrag.horizontal ? lines.ys : lines.xs, snapOpts())
+            coordinate = snapped.value
+            if (snapped.guide !== null) guides.push({ axis: activeDrag.horizontal ? 'y' : 'x', position: snapped.guide })
+          }
+          const before = store.plan
+          store.pushRoomEdge(activeDrag.roomId, activeDrag.edgeIndex, roundCm(coordinate))
+          if (usePlanStore.getState().plan !== before) dragMutated = true
+          markDirty()
+        }
 
+        if (drag.kind === 'moveVertex') {
+          const activeDrag = drag
+          const store = usePlanStore.getState()
           let point = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
           guides = []
-
           if (!altDown) {
-            const lines = collectSnapLines(otherRects(activeDrag.roomId), store.plan.apartment)
+            const lines = collectSnapLines(otherRooms(activeDrag.roomId), store.plan.apartment)
             const opts = snapOpts()
-            if (activeDrag.handle.includes('e') || activeDrag.handle.includes('w')) {
-              const sx = snapScalar(point.x, lines.xs, opts)
-              point = { ...point, x: sx.value }
-              if (sx.guide !== null) guides.push({ axis: 'x', position: sx.guide })
-            }
-            if (activeDrag.handle.includes('n') || activeDrag.handle.includes('s')) {
-              const sy = snapScalar(point.y, lines.ys, opts)
-              point = { ...point, y: sy.value }
-              if (sy.guide !== null) guides.push({ axis: 'y', position: sy.guide })
-            }
+            const sx = snapScalar(point.x, lines.xs, opts)
+            const sy = snapScalar(point.y, lines.ys, opts)
+            point = { x: sx.value, y: sy.value }
+            if (sx.guide !== null) guides.push({ axis: 'x', position: sx.guide })
+            if (sy.guide !== null) guides.push({ axis: 'y', position: sy.guide })
           }
-
-          store.updateRoomRect(activeDrag.roomId, applyResize(rect, activeDrag.handle, point))
+          const before = store.plan
+          store.moveRoomVertex(activeDrag.roomId, activeDrag.vertexIndex, point)
+          if (usePlanStore.getState().plan !== before) dragMutated = true
           markDirty()
         }
 
@@ -547,8 +590,12 @@ export function Editor2D() {
       const endInteraction = (e?: FederatedPointerEvent) => {
         panning = null
         revertDragIfColliding()
+        if ((drag.kind === 'pushEdge' || drag.kind === 'moveVertex') && dragMutated) {
+          usePlanStore.getState().mergeRoomCollinear(drag.roomId)
+        }
         if (drag.kind !== 'idle' || guides.length > 0) {
           drag = { kind: 'idle' }
+          dragMutated = false
           guides = []
           markDirty()
         }
@@ -590,6 +637,67 @@ export function Editor2D() {
       app.stage.on('pointerupoutside', endPointer)
       app.stage.on('pointercancel', endPointer)
 
+      // DOUBLE-GESTURE RULE (integration of polygonal rooms + mobile view): on a double
+      // click/tap — if a room is selected AND the point lands within hit radius of one of
+      // its edges (doubled radius for touch), SPLIT that wall at the point (polygon-rooms
+      // behavior); otherwise fall through and REFIT the viewport to the apartment (the
+      // mobile double-tap behavior, now shared by mouse double-click). One handler,
+      // ordered split-first, so the refit can never steal a wall-split gesture.
+      //
+      // Detection differs per pointer type only because pixi's click counting (e.detail)
+      // keys off the pointerId, and browsers hand each touch contact a fresh pointerId —
+      // so e.detail === 2 never happens for touch. Mouse/pen use e.detail; touch uses
+      // manual isDoubleTap tracking over pointertap events, with two extra guards: a tap
+      // whose finger traveled (a pan/drag), or any tap belonging to a pinch session,
+      // never counts toward a double-tap.
+      app.stage.on('pointertap', (e) => {
+        // a tap fired by the press that just consumed an armed placement is neither a
+        // split nor a refit candidate
+        if (justPlaced) {
+          justPlaced = false
+          lastTap = null
+          return
+        }
+        let isDouble: boolean
+        if (e.pointerType === 'touch') {
+          if (pinchSession) {
+            lastTap = null
+            return
+          }
+          const traveled =
+            touchDown && touchDown.pointerId === e.pointerId
+              ? Math.hypot(e.global.x - touchDown.x, e.global.y - touchDown.y)
+              : Infinity
+          if (traveled > 8) {
+            lastTap = null
+            return
+          }
+          const tap: Tap = { x: e.global.x, y: e.global.y, time: performance.now() }
+          isDouble = isDoubleTap(lastTap, tap)
+          lastTap = isDouble ? null : tap
+        } else {
+          isDouble = e.detail === 2
+        }
+        if (!isDouble) return
+        const store = usePlanStore.getState()
+        if (store.placing || store.placingFurniture) return
+        // split first: double click/tap on a wall of the selected room splits it
+        if (store.selection?.kind === 'room') {
+          const room = store.plan.rooms.find((r) => r.id === store.selection!.id)
+          if (room) {
+            const hit = nearestRoomEdge(room, viewport, { x: e.global.x, y: e.global.y }, hitRadius(8, e.pointerType))
+            if (hit) {
+              store.splitRoomEdge(room.id, hit.edgeIndex, hit.t)
+              markDirty()
+              return
+            }
+          }
+        }
+        // otherwise: refit the viewport to the whole apartment
+        viewport = fitApartment(app.screen.width, app.screen.height, store.plan.apartment)
+        markDirty()
+      })
+
       const onWheel = (ev: WheelEvent) => {
         ev.preventDefault()
         const bounds = app.canvas.getBoundingClientRect()
@@ -620,6 +728,7 @@ export function Editor2D() {
           if (drag.kind !== 'idle') {
             revertDragIfColliding()
             drag = { kind: 'idle' }
+            dragMutated = false
             guides = []
           }
           const store = usePlanStore.getState()
@@ -672,7 +781,7 @@ export function Editor2D() {
         const selectedRoom = selectedId
           ? store.plan.rooms.find((r) => r.id === selectedId)
           : undefined
-        drawHandles(layers.handles, selectedRoom ? polygonToRect(selectedRoom.polygon) : null, viewport)
+        drawPolygonHandles(layers.handles, selectedRoom ?? null, viewport)
         const selectedFurnitureItem =
           sel?.kind === 'furniture' ? store.plan.furniture.find((f) => f.id === sel.id) : undefined
         const selectedFloorItem =

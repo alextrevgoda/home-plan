@@ -1,74 +1,79 @@
-import { MIN_ROOM_SIZE, normalizeRoundDeg, polygonToRect, roundCm } from '../model/geometry'
+import { normalizeRoundDeg, roundCm } from '../model/geometry'
 import { catalogItem, type Layer } from '../model/catalog'
 import { ROTATION_SNAP_DEG, footprintCorners, pointInConvexPolygon, wallItemSpan } from '../model/furniture'
-import type { FloorItem, Plan, Rect, Room, Vec2 } from '../model/types'
+import { pointInPolygon } from '../model/polygon'
+import type { FloorItem, Plan, Room, Vec2 } from '../model/types'
 import { worldToScreen, screenToWorld, type Viewport } from './viewport'
 import { openingSpan, projectOntoEdge, roomEdge } from '../model/openings'
 
-export const HANDLE_IDS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const
-export type HandleId = (typeof HANDLE_IDS)[number]
-
-export function handlePositions(rect: Rect): Record<HandleId, Vec2> {
-  const { x, y, width: w, height: h } = rect
-  return {
-    nw: { x, y },
-    n: { x: x + w / 2, y },
-    ne: { x: x + w, y },
-    e: { x: x + w, y: y + h / 2 },
-    se: { x: x + w, y: y + h },
-    s: { x: x + w / 2, y: y + h },
-    sw: { x, y: y + h },
-    w: { x, y: y + h / 2 },
-  }
-}
-
 export function hitRoom(rooms: Room[], world: Vec2): string | null {
   for (let i = rooms.length - 1; i >= 0; i--) {
-    const rect = polygonToRect(rooms[i].polygon)
-    if (
-      rect &&
-      world.x >= rect.x &&
-      world.x <= rect.x + rect.width &&
-      world.y >= rect.y &&
-      world.y <= rect.y + rect.height
-    ) {
-      return rooms[i].id
+    if (pointInPolygon(world, rooms[i].polygon)) return rooms[i].id
+  }
+  return null
+}
+
+export interface PolygonHandle {
+  kind: 'vertex' | 'edge'
+  index: number
+  point: Vec2
+}
+
+export function polygonHandles(room: Room): PolygonHandle[] {
+  const n = room.polygon.length
+  const handles: PolygonHandle[] = []
+  for (let i = 0; i < n; i++) {
+    const prev = room.polygon[(i - 1 + n) % n]
+    const cur = room.polygon[i]
+    const next = room.polygon[(i + 1) % n]
+    const corner = (prev.x === cur.x) !== (cur.x === next.x)
+    if (corner) handles.push({ kind: 'vertex', index: i, point: cur })
+  }
+  for (let i = 0; i < n; i++) {
+    const a = room.polygon[i]
+    const b = room.polygon[(i + 1) % n]
+    handles.push({ kind: 'edge', index: i, point: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } })
+  }
+  return handles
+}
+
+export function hitPolygonHandle(room: Room, viewport: Viewport, screen: Vec2, radius = 8): PolygonHandle | null {
+  const handles = polygonHandles(room)
+  for (const kind of ['vertex', 'edge'] as const) {
+    for (const h of handles) {
+      if (h.kind !== kind) continue
+      const s = worldToScreen(viewport, h.point)
+      if (Math.abs(s.x - screen.x) <= radius && Math.abs(s.y - screen.y) <= radius) return h
     }
   }
   return null
 }
 
-export function hitHandle(rect: Rect, viewport: Viewport, screen: Vec2, radius = 8): HandleId | null {
-  const positions = handlePositions(rect)
-  for (const id of HANDLE_IDS) {
-    const s = worldToScreen(viewport, positions[id])
-    if (Math.abs(s.x - screen.x) <= radius && Math.abs(s.y - screen.y) <= radius) return id
-  }
-  return null
+export function edgeIsHorizontal(polygon: Vec2[], edgeIndex: number): boolean {
+  return polygon[edgeIndex].y === polygon[(edgeIndex + 1) % polygon.length].y
 }
 
-export function applyResize(rect: Rect, handle: HandleId, p: Vec2): Rect {
-  let { x, y, width, height } = rect
-  const right = x + width
-  const bottom = y + height
-
-  if (handle.includes('w')) {
-    const nx = Math.min(p.x, right - MIN_ROOM_SIZE)
-    width = right - nx
-    x = nx
+export function nearestRoomEdge(
+  room: Room,
+  viewport: Viewport,
+  screen: Vec2,
+  radius = 8,
+): { edgeIndex: number; t: number } | null {
+  let best: { edgeIndex: number; t: number } | null = null
+  let bestDist = radius
+  for (let i = 0; i < room.polygon.length; i++) {
+    const edge = roomEdge(room, i)
+    if (!edge) continue
+    const a = worldToScreen(viewport, edge.a)
+    const b = worldToScreen(viewport, edge.b)
+    const d = distToSegmentScreen(screen, a, b)
+    if (d <= bestDist) {
+      bestDist = d
+      const world = screenToWorld(viewport, screen)
+      best = { edgeIndex: i, t: roundCm(projectOntoEdge(edge, world)) }
+    }
   }
-  if (handle.includes('e')) {
-    width = Math.max(MIN_ROOM_SIZE, p.x - x)
-  }
-  if (handle.includes('n')) {
-    const ny = Math.min(p.y, bottom - MIN_ROOM_SIZE)
-    height = bottom - ny
-    y = ny
-  }
-  if (handle.includes('s')) {
-    height = Math.max(MIN_ROOM_SIZE, p.y - y)
-  }
-  return { x, y, width, height }
+  return best
 }
 
 export function distToSegmentScreen(p: Vec2, a: Vec2, b: Vec2): number {

@@ -3,6 +3,13 @@ import { catalogItem, floorFinish } from '../model/catalog'
 import { clampFloorItemPosition, floorItemCollides, floorItemInBounds } from '../model/furniture'
 import { MIN_ROOM_SIZE, normalizeRoundDeg, polygonArea, rectToPolygon, roundCm } from '../model/geometry'
 import { clampOffset, MIN_OPENING_WIDTH, OPENING_DEFAULTS, roomEdge } from '../model/openings'
+import {
+  mergeRoomCollinear as mergeRoomCollinearOp,
+  moveRoomVertex as moveRoomVertexOp,
+  pushRoomEdge as pushRoomEdgeOp,
+  splitRoomEdge as splitRoomEdgeOp,
+  translateRoom,
+} from '../model/polygon'
 import { createDefaultPlan } from '../model/serialization'
 import type {
   Apartment, FloorItem, Mode, Opening, OpeningKind, PlacedItem, Plan, Rect, Selection, Size3, Vec2, WallItem,
@@ -28,6 +35,11 @@ export interface PlanState {
   setApartment: (patch: Partial<Apartment>) => void
   addRoom: () => string
   updateRoomRect: (id: string, rect: Rect) => void
+  moveRoom: (id: string, delta: Vec2) => void
+  pushRoomEdge: (id: string, edgeIndex: number, coordinate: number) => void
+  splitRoomEdge: (id: string, edgeIndex: number, t: number) => void
+  moveRoomVertex: (id: string, vertexIndex: number, point: Vec2) => void
+  mergeRoomCollinear: (id: string) => void
   renameRoom: (id: string, name: string) => void
   setRoomColor: (id: string, color: string) => void
   deleteRoom: (id: string) => void
@@ -152,6 +164,33 @@ export const usePlanStore = create<PlanState>((set) => ({
         },
       }
     }),
+
+  moveRoom: (id, delta) =>
+    set((s) => {
+      const next = translateRoom(s.plan, id, delta)
+      return next ? { plan: next } : s
+    }),
+
+  pushRoomEdge: (id, edgeIndex, coordinate) =>
+    set((s) => {
+      const next = pushRoomEdgeOp(s.plan, id, edgeIndex, coordinate)
+      return next ? { plan: next } : s
+    }),
+
+  splitRoomEdge: (id, edgeIndex, t) =>
+    set((s) => {
+      const next = splitRoomEdgeOp(s.plan, id, edgeIndex, t)
+      return next ? { plan: next } : s
+    }),
+
+  moveRoomVertex: (id, vertexIndex, point) =>
+    set((s) => {
+      const next = moveRoomVertexOp(s.plan, id, vertexIndex, point)
+      return next ? { plan: next } : s
+    }),
+
+  mergeRoomCollinear: (id) =>
+    set((s) => ({ plan: mergeRoomCollinearOp(s.plan, id) })),
 
   renameRoom: (id, name) =>
     set((s) => ({

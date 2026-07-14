@@ -1,11 +1,12 @@
 import { Container, Graphics, Text } from 'pixi.js'
 import { catalogItem, floorFinish } from '../model/catalog'
-import { polygonToRect, rectInBounds, rectsOverlap } from '../model/geometry'
+import { polygonArea, rectInBounds, rectsOverlap } from '../model/geometry'
 import { collidingFurnitureIds, wallItemSpan } from '../model/furniture'
 import { openingSpan, openingWarnings, roomEdge } from '../model/openings'
+import { polygonBounds, polygonCentroid } from '../model/polygon'
 import type { SnapGuide } from '../model/snapping'
-import type { Apartment, FloorItem, PlacedItem, Plan, Rect, Selection, Vec2 } from '../model/types'
-import { handlePositions, rotationHandleScreen } from './interactions'
+import type { Apartment, FloorItem, PlacedItem, Plan, Room, Selection, Vec2 } from '../model/types'
+import { polygonHandles, rotationHandleScreen } from './interactions'
 import type { EdgeHit } from './interactions'
 import { symbolPaths, type SymbolCmd } from './symbols'
 import { screenToWorld, worldToScreen, type Viewport } from './viewport'
@@ -59,22 +60,25 @@ const WARNING_COLOR = '#e07a5f'
 export function drawRooms(container: Container, plan: Plan, selectedId: string | null, viewport: Viewport) {
   for (const child of container.removeChildren()) child.destroy(true)
 
-  const rects = plan.rooms.map((room) => ({ room, rect: polygonToRect(room.polygon) }))
+  const entries = plan.rooms.map((room) => ({ room, bounds: polygonBounds(room.polygon) }))
 
-  for (const { room, rect } of rects) {
-    if (!rect) continue
-    const overlapping = rects.some(
-      (other) => other.room.id !== room.id && other.rect && rectsOverlap(rect, other.rect),
+  for (const { room, bounds } of entries) {
+    // Bounding-box approximation: two non-convex (e.g. L-shaped) rooms whose boxes overlap but
+    // whose actual polygons don't may false-positive here. Deliberate — this is a warning-only
+    // heuristic, not a correctness gate, so we accept the occasional over-eager flag.
+    const overlapping = entries.some(
+      (other) => other.room.id !== room.id && rectsOverlap(bounds, other.bounds),
     )
-    const warning = overlapping || !rectInBounds(rect, plan.apartment)
+    const warning = overlapping || !rectInBounds(bounds, plan.apartment)
     const selected = room.id === selectedId
 
-    const tl = worldToScreen(viewport, { x: rect.x, y: rect.y })
-    const w = rect.width * viewport.scale
-    const h = rect.height * viewport.scale
+    const pts = room.polygon.flatMap((p) => {
+      const s = worldToScreen(viewport, p)
+      return [s.x, s.y]
+    })
 
     const g = new Graphics()
-    g.rect(tl.x, tl.y, w, h)
+    g.poly(pts)
       .fill({ color: warning ? WARNING_COLOR : room.color, alpha: 0.55 })
       .stroke({ width: selected ? 3 : 1.5, color: selected ? 0x1d4ed8 : 0x475069 })
     container.addChild(g)
@@ -82,26 +86,30 @@ export function drawRooms(container: Container, plan: Plan, selectedId: string |
     const finish = room.floorMaterial ? floorFinish(room.floorMaterial) : undefined
     if (finish) {
       const tintG = new Graphics()
-      tintG.rect(tl.x, tl.y, w, h).fill({ color: finish.tint, alpha: 0.35 })
+      tintG.poly(pts).fill({ color: finish.tint, alpha: 0.35 })
       container.addChild(tintG)
     }
 
+    const c = worldToScreen(viewport, polygonCentroid(room.polygon))
     const label = new Text({
-      text: `${room.name}\n${rect.width.toFixed(2)} × ${rect.height.toFixed(2)}`,
+      text: `${room.name}\n${polygonArea(room.polygon).toFixed(1)} m²`,
       style: { fontSize: 13, fill: 0x1f2430, align: 'center' },
     })
     label.anchor.set(0.5)
-    label.position.set(tl.x + w / 2, tl.y + h / 2)
+    label.position.set(c.x, c.y)
     container.addChild(label)
   }
 }
 
-export function drawHandles(g: Graphics, rect: Rect | null, viewport: Viewport) {
+export function drawPolygonHandles(g: Graphics, room: Room | null, viewport: Viewport) {
   g.clear()
-  if (!rect) return
-  for (const pos of Object.values(handlePositions(rect))) {
-    const s = worldToScreen(viewport, pos)
-    g.rect(s.x - 4, s.y - 4, 8, 8).fill({ color: 0xffffff }).stroke({ width: 1.5, color: 0x1d4ed8 })
+  if (!room) return
+  for (const h of polygonHandles(room)) {
+    const s = worldToScreen(viewport, h.point)
+    const half = h.kind === 'vertex' ? 4 : 3
+    g.rect(s.x - half, s.y - half, half * 2, half * 2)
+      .fill({ color: h.kind === 'vertex' ? 0xffffff : 0xe8edff })
+      .stroke({ width: 1.5, color: 0x1d4ed8 })
   }
 }
 

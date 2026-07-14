@@ -1,14 +1,42 @@
 import { describe, expect, it } from 'vitest'
+import { rectToPolygon } from './geometry'
+import type { Room } from './types'
 import { collectSnapLines, snapMove, snapScalar } from './snapping'
 
 const opts = { gridStep: 0.1, gridThreshold: 0.05, edgeThreshold: 0.08 }
 const apartment = { width: 10, depth: 8, wallHeight: 2.7 }
 
+const roomFromRect = (x: number, y: number, width: number, height: number, id = 'r'): Room => ({
+  id,
+  name: id,
+  color: '#8ecae6',
+  polygon: rectToPolygon({ x, y, width, height }),
+})
+
 describe('collectSnapLines', () => {
   it('includes apartment boundary and all rect edges', () => {
-    const lines = collectSnapLines([{ x: 1, y: 2, width: 3, height: 2 }], apartment)
-    expect(lines.xs).toEqual([0, 10, 1, 4])
-    expect(lines.ys).toEqual([0, 8, 2, 4])
+    const lines = collectSnapLines([roomFromRect(1, 2, 3, 2)], apartment)
+    expect(lines.xs.sort((a, b) => a - b)).toEqual([0, 1, 4, 10])
+    expect(lines.ys.sort((a, b) => a - b)).toEqual([0, 2, 4, 8])
+  })
+
+  it('collects lines from every rectilinear edge plus apartment bounds', () => {
+    const lRoom: Room = {
+      id: 'r1',
+      name: 'A',
+      color: '#8ecae6',
+      polygon: [
+        { x: 0, y: 0 },
+        { x: 2, y: 0 },
+        { x: 2, y: 1 },
+        { x: 4, y: 1 },
+        { x: 4, y: 3 },
+        { x: 0, y: 3 },
+      ],
+    }
+    const lines = collectSnapLines([lRoom], apartment)
+    expect(lines.xs.sort((a, b) => a - b)).toEqual([0, 0, 2, 4, 10])
+    expect(lines.ys.sort((a, b) => a - b)).toEqual([0, 0, 1, 3, 8])
   })
 })
 
@@ -34,7 +62,7 @@ describe('snapScalar', () => {
 
 describe('snapMove', () => {
   it('snaps the leading edge to a neighbouring room edge and reports a guide', () => {
-    const lines = collectSnapLines([{ x: 0, y: 0, width: 2, height: 2 }], apartment)
+    const lines = collectSnapLines([roomFromRect(0, 0, 2, 2)], apartment)
     const res = snapMove({ x: 2.05, y: 5.32, width: 3, height: 2 }, lines, opts)
     expect(res.x).toBe(2)
     expect(res.guides).toContainEqual({ axis: 'x', position: 2 })

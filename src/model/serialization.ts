@@ -3,6 +3,7 @@ import { catalogItem, floorFinish } from './catalog'
 import { clampFloorItemPosition } from './furniture'
 import { normalizeRoundDeg, polygonArea, roundCm } from './geometry'
 import { clampOffset, roomEdge } from './openings'
+import { isRectilinear, isSimplePolygon } from './polygon'
 import type { Plan, PlacedItem } from './types'
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
@@ -71,7 +72,9 @@ export const planSchema = z
         polygon: z
           .array(vec2Schema)
           .min(3)
-          .refine((poly) => polygonArea(poly) > 0, { message: 'degenerate polygon' }),
+          .refine((poly) => polygonArea(poly) > 0, { message: 'degenerate polygon' })
+          .refine((poly) => isRectilinear(poly), { message: 'non-rectilinear polygon' })
+          .refine((poly) => isSimplePolygon(poly), { message: 'self-intersecting polygon' }),
         color: hexColor,
         floorMaterial: z.string().refine((id) => !!floorFinish(id), { message: 'unknown floor material' }).optional(),
         wallColor: hexColor.optional(),

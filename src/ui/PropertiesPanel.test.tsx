@@ -70,3 +70,34 @@ describe('PropertiesPanel — furniture', () => {
     void roomId
   })
 })
+
+describe('PropertiesPanel — rooms (rect and polygonal)', () => {
+  beforeEach(() => {
+    usePlanStore.setState({ plan: createDefaultPlan(), selection: null, placing: null, placingFurniture: null })
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('non-rect rooms hide dimension fields but show area', () => {
+    const st = usePlanStore.getState()
+    const id = st.addRoom()
+    st.splitRoomEdge(id, 0, 1.5)
+    const topY = usePlanStore.getState().plan.rooms[0].polygon[0].y
+    st.pushRoomEdge(id, 0, topY + 1)
+    usePlanStore.getState().selectRoom(id)
+    render(<PropertiesPanel />)
+    expect(screen.queryByLabelText('Width (m)')).not.toBeInTheDocument()
+    expect(screen.getByText(/m²/)).toBeInTheDocument()
+  })
+
+  it('rect rooms keep dimension fields and gain area', () => {
+    const st = usePlanStore.getState()
+    const id = st.addRoom()
+    usePlanStore.getState().selectRoom(id)
+    render(<PropertiesPanel />)
+    expect(screen.getByLabelText('Width (m)')).toBeInTheDocument()
+    expect(screen.getByText(/9\.0 m²/)).toBeInTheDocument() // 3×3 default room
+  })
+})

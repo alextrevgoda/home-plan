@@ -10,10 +10,13 @@ Plan your apartment layout in 2D, view it in 3D.
 ## Use
 
 - **Apartment**: with nothing selected, set width/depth/wall height in the right panel (meters).
-- **Rooms**: "+ Add room", then drag to move, drag handles to resize. Rooms snap to
-  the 0.1 m grid, other rooms' edges, and the apartment boundary — hold **Alt** to
-  disable snapping. **Delete** removes the selected room. Overlapping or
-  out-of-bounds rooms tint orange as a warning.
+- **Rooms**: "+ Add room", then drag to move; drag a wall (edge handle) to push it,
+  drag a corner to resize, double-click a wall to split it and push a segment to cut
+  notches — L/T/U shapes and any rectilinear outline. Pushing a notch flush removes
+  it. Rooms snap to the 0.1 m grid, other rooms' walls, and the apartment boundary —
+  hold **Alt** to disable. The label shows the room's area; exact X/Y/W/H editing in
+  the panel applies to rectangular rooms. **Delete** removes the selected room.
+  Overlapping or out-of-bounds rooms tint orange as a warning.
 - **Doors & windows**: with a room in place, click "+ Door" or "+ Window", then
   click a wall to place the opening (the target wall highlights green). Drag an
   opening to slide it along its wall; edit width/height/sill in the panel.

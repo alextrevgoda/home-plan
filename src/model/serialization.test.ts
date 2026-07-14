@@ -57,6 +57,17 @@ describe('serializePlan / parsePlan', () => {
     expect(parsePlan(JSON.stringify(plan))).toBeNull()
   })
 
+  it('rejects non-rectilinear and self-crossing room polygons', () => {
+    const base = createDefaultPlan()
+    const diag = { id: 'r1', name: 'A', color: '#8ecae6', polygon: [
+      { x: 0, y: 0 }, { x: 2, y: 1 }, { x: 2, y: 3 }, { x: 0, y: 2 } ] }
+    expect(parsePlan(serializePlan({ ...base, rooms: [diag] } as Plan))).toBeNull()
+    const lShape = { id: 'r1', name: 'A', color: '#8ecae6', polygon: [
+      { x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }, { x: 4, y: 1 },
+      { x: 4, y: 3 }, { x: 0, y: 3 } ] }
+    expect(parsePlan(serializePlan({ ...base, rooms: [lShape] } as Plan))).not.toBeNull()
+  })
+
   it('rejects bad color strings', () => {
     const plan = createDefaultPlan()
     plan.rooms.push({
