@@ -196,6 +196,45 @@ function OpeningProps({ opening }: { opening: Opening }) {
         value={opening.offset}
         onCommit={(v) => updateOpening(opening.id, { offset: v })}
       />
+      {opening.kind === 'door' && (
+        <>
+          <div className="field">
+            State
+            <div className="swatches">
+              <button className={opening.open ? '' : 'active'} onClick={() => updateOpening(opening.id, { open: false })}>
+                Closed
+              </button>
+              <button className={opening.open ? 'active' : ''} onClick={() => updateOpening(opening.id, { open: true })}>
+                Open
+              </button>
+            </div>
+          </div>
+          <div className="field">
+            {/* Left/Right = the jamb as seen facing the wall from inside the room;
+                with normalized winding that is always 'start'/'end' respectively */}
+            Hinge
+            <div className="swatches">
+              <button className={opening.hinge === 'end' ? '' : 'active'} onClick={() => updateOpening(opening.id, { hinge: 'start' })}>
+                Left
+              </button>
+              <button className={opening.hinge === 'end' ? 'active' : ''} onClick={() => updateOpening(opening.id, { hinge: 'end' })}>
+                Right
+              </button>
+            </div>
+          </div>
+          <div className="field">
+            Swings
+            <div className="swatches">
+              <button className={opening.swing === 'out' ? '' : 'active'} onClick={() => updateOpening(opening.id, { swing: 'in' })}>
+                Inward
+              </button>
+              <button className={opening.swing === 'out' ? 'active' : ''} onClick={() => updateOpening(opening.id, { swing: 'out' })}>
+                Outward
+              </button>
+            </div>
+          </div>
+        </>
+      )}
       <button onClick={() => deleteOpening(opening.id)}>
         Delete {opening.kind === 'door' ? 'door' : 'window'}
       </button>

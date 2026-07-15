@@ -101,3 +101,50 @@ describe('PropertiesPanel — rooms (rect and polygonal)', () => {
     expect(screen.getByText(/9\.0 m²/)).toBeInTheDocument() // 3×3 default room
   })
 })
+
+describe('PropertiesPanel — door state controls', () => {
+  beforeEach(() => {
+    usePlanStore.setState({ plan: createDefaultPlan(), selection: null, placing: null, placingFurniture: null })
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  // Seeds a 4×3 room and a door on its top edge (offset 2 is safely within
+  // clampOffset bounds for the door's default 0.9m width), then renders the
+  // panel with that door selected. addOpening already sets selection.
+  const renderWithDoorSelected = () => {
+    const roomId = usePlanStore.getState().addRoom()
+    usePlanStore.getState().updateRoomRect(roomId, { x: 0, y: 0, width: 4, height: 3 })
+    usePlanStore.getState().addOpening('door', roomId, 0, 2)
+    render(<PropertiesPanel />)
+  }
+
+  const renderWithWindowSelected = () => {
+    const roomId = usePlanStore.getState().addRoom()
+    usePlanStore.getState().updateRoomRect(roomId, { x: 0, y: 0, width: 4, height: 3 })
+    usePlanStore.getState().addOpening('window', roomId, 0, 2)
+    render(<PropertiesPanel />)
+  }
+
+  it('shows door state controls for doors only', () => {
+    renderWithDoorSelected() // helper: seed store with 4×3 room + door, selection on it
+    expect(screen.getByRole('button', { name: 'Open', exact: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Left', exact: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Outward', exact: true })).toBeInTheDocument()
+  })
+
+  it('hides door state controls for windows', () => {
+    renderWithWindowSelected()
+    expect(screen.queryByRole('button', { name: 'Open', exact: true })).toBeNull()
+  })
+
+  it('toggles open and flips hinge via the store', () => {
+    renderWithDoorSelected()
+    fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }))
+    expect(usePlanStore.getState().plan.openings[0].open).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Right', exact: true }))
+    expect(usePlanStore.getState().plan.openings[0].hinge).toBe('end')
+  })
+})
