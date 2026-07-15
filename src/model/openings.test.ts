@@ -4,6 +4,8 @@ import { createDefaultPlan } from './serialization'
 import type { Opening, Plan, Room } from './types'
 import {
   clampOffset,
+  doorSwing,
+  fitOpeningWidth,
   mergeIntervals,
   openingsOnEdge,
   openingSpan,
@@ -161,4 +163,53 @@ describe('openingWarnings', () => {
     const plan = planWith([roomA], [door('A', 0, 1), door('A', 0, 3)])
     expect(openingWarnings(plan)).toEqual(new Set())
   })
+})
+
+describe('doorSwing', () => {
+  const room: Room = {
+    id: 'r1', name: 'R', color: '#8ecae6',
+    polygon: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }],
+  }
+  const door = (patch: Partial<Opening>): Opening => ({
+    id: 'o1', kind: 'door', roomId: 'r1', edgeIndex: 0, offset: 2, width: 1,
+    height: 2.1, sillHeight: 0, hinge: 'start', swing: 'in', open: false, ...patch,
+  })
+
+  it('hinge start, swing in: opens into the room (top edge → +y)', () => {
+    const s = doorSwing(door({}), room)!
+    expect(s.hinge).toEqual({ x: 1.5, y: 0 })
+    expect(s.closedEnd).toEqual({ x: 2.5, y: 0 })
+    expect(s.openEnd.x).toBeCloseTo(1.5, 10)
+    expect(s.openEnd.y).toBeCloseTo(1, 10)
+  })
+
+  it('hinge end pivots on the far jamb', () => {
+    const s = doorSwing(door({ hinge: 'end' }), room)!
+    expect(s.hinge).toEqual({ x: 2.5, y: 0 })
+    expect(s.closedEnd).toEqual({ x: 1.5, y: 0 })
+    expect(s.openEnd.x).toBeCloseTo(2.5, 10)
+    expect(s.openEnd.y).toBeCloseTo(1, 10)
+  })
+
+  it('swing out flips to the exterior side', () => {
+    const s = doorSwing(door({ swing: 'out' }), room)!
+    expect(s.openEnd.y).toBeCloseTo(-1, 10)
+  })
+
+  it('vertical edge: interior is -x for the east wall', () => {
+    const s = doorSwing(door({ edgeIndex: 1, offset: 1.5 }), room)!
+    expect(s.hinge).toEqual({ x: 4, y: 1 })
+    expect(s.openEnd.x).toBeCloseTo(3, 10)
+    expect(s.openEnd.y).toBeCloseTo(1, 10)
+  })
+
+  it('returns null for windows', () => {
+    expect(doorSwing(door({ kind: 'window' }), room)).toBeNull()
+  })
+})
+
+describe('fitOpeningWidth', () => {
+  it('caps width at the edge length', () => expect(fitOpeningWidth(1, 0.5)).toBe(0.5))
+  it('keeps width that fits', () => expect(fitOpeningWidth(1, 4)).toBe(1))
+  it('never goes below the minimum', () => expect(fitOpeningWidth(1, 0.2)).toBe(0.3))
 })

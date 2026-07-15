@@ -8,6 +8,12 @@ export const OPENING_DEFAULTS = {
 
 export const MIN_OPENING_WIDTH = 0.3
 
+export interface DoorSwing {
+  hinge: Vec2
+  closedEnd: Vec2
+  openEnd: Vec2
+}
+
 const COLLINEAR_EPS = 1e-6
 const MIN_OVERLAP = 0.01
 
@@ -115,4 +121,25 @@ export function openingWarnings(plan: Plan): Set<string> {
     }
   }
   return warned
+}
+
+// World-space leaf geometry for a door. Room polygons are winding-normalized
+// (positive signed area), which puts the interior on the (-uy, ux) side of
+// edge a→b — so 'in' swings that way, 'out' the opposite.
+export function doorSwing(opening: Opening, room: Room): DoorSwing | null {
+  if (opening.kind !== 'door') return null
+  const edge = roomEdge(room, opening.edgeIndex)
+  const span = openingSpan(opening, room)
+  if (!edge || !span) return null
+  const hinge = opening.hinge === 'end' ? span.b : span.a
+  const closedEnd = opening.hinge === 'end' ? span.a : span.b
+  const sign = opening.swing === 'out' ? -1 : 1
+  const dir = { x: -edge.uy * sign, y: edge.ux * sign }
+  const w = Math.hypot(closedEnd.x - hinge.x, closedEnd.y - hinge.y)
+  return { hinge, closedEnd, openEnd: { x: hinge.x + dir.x * w, y: hinge.y + dir.y * w } }
+}
+
+// Fit an opening's width to its edge: never wider than the edge, never below the minimum.
+export function fitOpeningWidth(width: number, edgeLength: number): number {
+  return roundCm(Math.max(MIN_OPENING_WIDTH, Math.min(width, edgeLength)))
 }
