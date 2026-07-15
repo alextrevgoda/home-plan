@@ -218,6 +218,19 @@ describe('splitRoomEdge', () => {
     expect(splitRoomEdge(base, 'r1', 0, 0.05)).toBeNull()
     expect(splitRoomEdge(base, 'r1', 0, 3.95)).toBeNull()
   })
+  it('shrinks an opening wider than its sub-edge after the split', () => {
+    // 4m top edge; door width 2.5 centered at offset 2; split at the 2m midpoint
+    // → door re-homes by center (2 ≥ 2) to the second 2m sub-edge and must clamp to width 2
+    const wide = planWith(
+      room(rectToPolygon({ x: 0, y: 0, width: 4, height: 3 })),
+      [{ ...door(0, 2), width: 2.5 }],
+    )
+    const out = splitRoomEdge(wide, 'r1', 0, 2)!
+    const o = out.openings[0]
+    expect(o.edgeIndex).toBe(1)
+    expect(o.width).toBe(2)
+    expect(o.offset).toBe(1)
+  })
 })
 
 describe('split → push → merge round-trip', () => {

@@ -1,6 +1,6 @@
 import { clampOffset, fitOpeningWidth, roomEdge } from './openings'
 import { roundCm } from './geometry'
-import type { Plan, Rect, Room, Vec2 } from './types'
+import type { Opening, Plan, Rect, Room, Vec2 } from './types'
 
 export const MIN_EDGE = 0.1
 
@@ -353,10 +353,20 @@ export function splitRoomEdge(plan: Plan, roomId: string, edgeIndex: number, t: 
     const rebased = toSecond ? item.offset - tc : item.offset
     return { ...item, edgeIndex: newIndex, offset: clampOffset(rebased, width, e.length) }
   }
+  // openings additionally shrink to fit the (shorter) sub-edge they re-home to
+  const routeOpening = (o: Opening): Opening => {
+    if (o.edgeIndex !== edgeIndex) return route(o, o.width)
+    const toSecond = o.offset >= tc
+    const newIndex = toSecond ? edgeIndex + 1 : edgeIndex
+    const e = roomEdge(nextRoom, newIndex)!
+    const rebased = toSecond ? o.offset - tc : o.offset
+    const width = fitOpeningWidth(o.width, e.length)
+    return { ...o, edgeIndex: newIndex, width, offset: clampOffset(rebased, width, e.length) }
+  }
   return {
     ...plan,
     rooms: plan.rooms.map((room) => (room.id === roomId ? nextRoom : room)),
-    openings: plan.openings.map((o) => (o.roomId === roomId ? route(o, o.width) : o)),
+    openings: plan.openings.map((o) => (o.roomId === roomId ? routeOpening(o) : o)),
     furniture: plan.furniture.map((f) =>
       f.mount === 'wall' && f.roomId === roomId ? route(f, f.size.width) : f,
     ),
