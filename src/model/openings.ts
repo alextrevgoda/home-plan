@@ -2,7 +2,7 @@ import { roundCm } from './geometry'
 import type { Opening, Plan, Room, Vec2 } from './types'
 
 export const OPENING_DEFAULTS = {
-  door: { width: 0.9, height: 2.1, sillHeight: 0 },
+  door: { width: 0.9, height: 2.1, sillHeight: 0, hinge: 'start', swing: 'in', open: false },
   window: { width: 1.2, height: 1.2, sillHeight: 0.9 },
 } as const
 

@@ -10,16 +10,27 @@ const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(mi
 
 const vec2Schema = z.object({ x: z.number().finite(), y: z.number().finite() })
 
-const openingSchema = z.object({
+const openingBase = {
   id: z.string().min(1),
-  kind: z.enum(['door', 'window']),
   roomId: z.string().min(1),
   edgeIndex: z.number().int().min(0),
   offset: z.number().finite().min(0),
   width: z.number().finite().min(0.3),
   height: z.number().finite().positive(),
   sillHeight: z.number().finite().min(0),
+}
+
+const doorSchema = z.object({
+  ...openingBase,
+  kind: z.literal('door'),
+  hinge: z.enum(['start', 'end']),
+  swing: z.enum(['in', 'out']),
+  open: z.boolean(),
 })
+
+const windowSchema = z.object({ ...openingBase, kind: z.literal('window') })
+
+const openingSchema = z.discriminatedUnion('kind', [doorSchema, windowSchema])
 
 const size3Schema = z.object({
   width: z.number().finite().positive(),
@@ -57,7 +68,7 @@ const placedItemSchema = z.discriminatedUnion('mount', [floorItemSchema, wallIte
 
 export const planSchema = z
   .object({
-    version: z.literal(3),
+    version: z.literal(4),
     id: z.string().min(1),
     name: z.string(),
     apartment: z.object({
@@ -113,7 +124,7 @@ export const planSchema = z
 
 export function createDefaultPlan(): Plan {
   return {
-    version: 3,
+    version: 4,
     id: crypto.randomUUID(),
     name: 'My apartment',
     apartment: { width: 10, depth: 8, wallHeight: 2.7 },
@@ -134,6 +145,20 @@ function migrate(raw: unknown): unknown {
   }
   if (out !== null && typeof out === 'object' && (out as { version?: unknown }).version === 2) {
     out = { ...(out as object), version: 3, furniture: [] }
+  }
+  if (out !== null && typeof out === 'object' && (out as { version?: unknown }).version === 3) {
+    const openings = (out as { openings?: unknown }).openings
+    out = {
+      ...(out as object),
+      version: 4,
+      openings: Array.isArray(openings)
+        ? openings.map((o) =>
+            o !== null && typeof o === 'object' && (o as { kind?: unknown }).kind === 'door'
+              ? { hinge: 'start', swing: 'in', open: false, ...(o as object) }
+              : o,
+          )
+        : openings,
+    }
   }
   return out
 }

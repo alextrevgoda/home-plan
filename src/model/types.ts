@@ -36,6 +36,9 @@ export interface Opening {
   width: number
   height: number
   sillHeight: number // doors: always 0
+  hinge?: 'start' | 'end' // doors only: jamb the leaf pivots on, in edge direction
+  swing?: 'in' | 'out' // doors only: 'in' opens into the owning room
+  open?: boolean // doors only
 }
 
 export interface Size3 {
@@ -69,7 +72,7 @@ export interface WallItem {
 export type PlacedItem = FloorItem | WallItem
 
 export interface Plan {
-  version: 3
+  version: 4
   id: string
   name: string
   apartment: Apartment

@@ -4,9 +4,9 @@ import { createDefaultPlan, parsePlan, planSchema, serializePlan } from './seria
 import type { FloorItem, Plan, WallItem } from './types'
 
 describe('createDefaultPlan', () => {
-  it('creates a valid empty v3 plan with spec defaults', () => {
+  it('creates a valid empty v4 plan with spec defaults', () => {
     const plan = createDefaultPlan()
-    expect(plan.version).toBe(3)
+    expect(plan.version).toBe(4)
     expect(plan.apartment).toEqual({ width: 10, depth: 8, wallHeight: 2.7 })
     expect(plan.rooms).toEqual([])
     expect(plan.openings).toEqual([])
@@ -32,7 +32,7 @@ describe('serializePlan / parsePlan', () => {
   })
 
   it('rejects unknown schema version', () => {
-    const plan = { ...createDefaultPlan(), version: 4 }
+    const plan = { ...createDefaultPlan(), version: 5 }
     expect(parsePlan(JSON.stringify(plan))).toBeNull()
   })
 
@@ -96,6 +96,9 @@ describe('serializePlan / parsePlan', () => {
       width: 0.9,
       height: 2.1,
       sillHeight: 0,
+      hinge: 'start',
+      swing: 'in',
+      open: false,
     })
     expect(parsePlan(serializePlan(plan))).toEqual(plan)
   })
@@ -105,7 +108,7 @@ describe('serializePlan / parsePlan', () => {
     delete v1.openings
     const parsed = parsePlan(JSON.stringify(v1))
     expect(parsed).not.toBeNull()
-    expect(parsed!.version).toBe(3)
+    expect(parsed!.version).toBe(4)
     expect(parsed!.openings).toEqual([])
     expect(parsed!.furniture).toEqual([])
   })
@@ -172,20 +175,20 @@ describe('v3 furniture', () => {
     position: { x: 2, y: 2 }, rotation: 90, size: { width: 2.2, depth: 0.95, height: 0.85 },
   }
 
-  it('migrates v2 to v3 by adding empty furniture', () => {
+  it('migrates v2 to v4 by adding empty furniture', () => {
     const v2 = { ...createDefaultPlan(), version: 2 } as unknown as Record<string, unknown>
     delete v2.furniture
     const plan = parsePlan(JSON.stringify(v2))
-    expect(plan?.version).toBe(3)
+    expect(plan?.version).toBe(4)
     expect(plan?.furniture).toEqual([])
   })
 
-  it('migrates v1 all the way to v3', () => {
+  it('migrates v1 all the way to v4', () => {
     const v1 = { ...createDefaultPlan(), version: 1 } as unknown as Record<string, unknown>
     delete v1.openings
     delete v1.furniture
     const plan = parsePlan(JSON.stringify(v1))
-    expect(plan?.version).toBe(3)
+    expect(plan?.version).toBe(4)
     expect(plan?.openings).toEqual([])
     expect(plan?.furniture).toEqual([])
   })
@@ -266,5 +269,62 @@ describe('v3 furniture', () => {
     const item = parsed?.furniture[0] as WallItem | undefined
     expect(item?.offset).toBeGreaterThanOrEqual(wallItem.size.width / 2)
     expect(item?.elevation).toBe(0)
+  })
+})
+
+describe('plan v4 door swing fields', () => {
+  const room = {
+    id: 'r1', name: 'Room 1', color: '#8ecae6',
+    polygon: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }],
+  }
+  const base = {
+    id: 'p1', name: 'test',
+    apartment: { width: 10, depth: 8, wallHeight: 2.7 },
+    rooms: [room], furniture: [],
+  }
+  const door = { id: 'o1', kind: 'door', roomId: 'r1', edgeIndex: 0, offset: 2, width: 0.9, height: 2.1, sillHeight: 0 }
+  const window_ = { id: 'o2', kind: 'window', roomId: 'r1', edgeIndex: 2, offset: 2, width: 1.2, height: 1.2, sillHeight: 0.9 }
+
+  it('migrates v3 doors with default hinge/swing/open', () => {
+    const plan = parsePlan(JSON.stringify({ ...base, version: 3, openings: [door, window_] }))
+    expect(plan?.version).toBe(4)
+    const d = plan!.openings.find((o) => o.id === 'o1')!
+    expect(d.hinge).toBe('start')
+    expect(d.swing).toBe('in')
+    expect(d.open).toBe(false)
+    const w = plan!.openings.find((o) => o.id === 'o2')!
+    expect(w.hinge).toBeUndefined()
+  })
+
+  it('rejects a v4 door missing swing fields', () => {
+    expect(parsePlan(JSON.stringify({ ...base, version: 4, openings: [door] }))).toBeNull()
+  })
+
+  it('strips swing fields from windows', () => {
+    const plan = parsePlan(JSON.stringify({
+      ...base, version: 4,
+      openings: [{ ...window_, hinge: 'end', swing: 'out', open: true }],
+    }))
+    expect(plan).not.toBeNull()
+    const w = plan!.openings.find((o) => o.id === 'o2')!
+    expect(w.hinge).toBeUndefined()
+    expect(w.swing).toBeUndefined()
+    expect(w.open).toBeUndefined()
+  })
+
+  it('round-trips an open door through serialize/parse', () => {
+    const plan = parsePlan(JSON.stringify({
+      ...base, version: 4,
+      openings: [{ ...door, hinge: 'end', swing: 'out', open: true }],
+    }))!
+    const again = parsePlan(serializePlan(plan))!
+    expect(again.openings).toEqual(plan.openings)
+  })
+
+  it('still chain-migrates a v1 plan', () => {
+    const plan = parsePlan(JSON.stringify({ version: 1, id: 'p1', name: 'old', apartment: base.apartment, rooms: [room] }))
+    expect(plan?.version).toBe(4)
+    expect(plan?.openings).toEqual([])
+    expect(plan?.furniture).toEqual([])
   })
 })
