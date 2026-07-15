@@ -2,7 +2,7 @@ import { normalizeRoundDeg, roundCm } from '../model/geometry'
 import { catalogItem, type Layer } from '../model/catalog'
 import { ROTATION_SNAP_DEG, footprintCorners, pointInConvexPolygon, wallItemSpan } from '../model/furniture'
 import { pointInPolygon } from '../model/polygon'
-import type { FloorItem, Opening, Plan, Room, Selection, Vec2 } from '../model/types'
+import type { FloorItem, Plan, Room, Selection, Vec2 } from '../model/types'
 import { worldToScreen, screenToWorld, type Viewport } from './viewport'
 import { openingSpan, projectOntoEdge, roomEdge } from '../model/openings'
 

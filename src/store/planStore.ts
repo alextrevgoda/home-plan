@@ -280,12 +280,12 @@ export const usePlanStore = create<PlanState>((set) => ({
       let next: Opening
       if (end === 'start') {
         const jamb = roundCm(clamp(t, 0, Math.max(0, endJamb - MIN_OPENING_WIDTH)))
-        const width = roundCm(endJamb - jamb)
-        next = { ...opening, width, offset: jamb + width / 2 }
+        const width = Math.max(MIN_OPENING_WIDTH, roundCm(endJamb - jamb))
+        next = { ...opening, width, offset: endJamb - width / 2 }
       } else {
         const jamb = roundCm(clamp(t, Math.min(edge.length, startJamb + MIN_OPENING_WIDTH), edge.length))
-        const width = roundCm(jamb - startJamb)
-        next = { ...opening, width, offset: jamb - width / 2 }
+        const width = Math.max(MIN_OPENING_WIDTH, roundCm(jamb - startJamb))
+        next = { ...opening, width, offset: startJamb + width / 2 }
       }
       return { plan: { ...s.plan, openings: s.plan.openings.map((o) => (o.id === id ? next : o)) } }
     }),

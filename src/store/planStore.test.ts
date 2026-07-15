@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { catalogItem } from '../model/catalog'
 import { polygonToRect } from '../model/geometry'
-import { createDefaultPlan } from '../model/serialization'
+import { createDefaultPlan, parsePlan, serializePlan } from '../model/serialization'
 import type { FloorItem, WallItem } from '../model/types'
 import { usePlanStore } from './planStore'
 
@@ -245,6 +245,31 @@ describe('resizeOpeningEnd', () => {
     usePlanStore.getState().updateRoomRect(roomId, { x: 0, y: 0, width: 2, height: 3 })
     const o = usePlanStore.getState().plan.openings[0]
     expect(o.width).toBe(2)
+  })
+
+  it('never persists a width below MIN_OPENING_WIDTH even when the fixed jamb sits inside the min-width band', () => {
+    const { roomId, doorId } = setup()
+    // Shrink edge 0 (currently length 4, door at offset 2 / width 1) down to 0.2 m by
+    // pushing the room's right edge (edge 1) in. withRoomPolygon auto-refits the door via
+    // fitOpeningWidth: width floors to MIN_OPENING_WIDTH (0.3) even though the edge (0.2) is
+    // shorter — the spec-permitted "wider than its edge" state — offset clamps to edge.length/2.
+    // Door becomes width 0.3, offset 0.1 → jambs at -0.05 (start) and 0.25 (end, the fixed one).
+    usePlanStore.getState().pushRoomEdge(roomId, 1, 0.2)
+    const before = usePlanStore.getState().plan.openings[0]
+    expect(before.width).toBeCloseTo(0.3, 10)
+    expect(before.offset - before.width / 2).toBeCloseTo(-0.05, 10)
+    expect(before.offset + before.width / 2).toBeCloseTo(0.25, 10)
+
+    // Drag the start jamb toward the fixed end jamb (which sits only 0.25 m from the edge's
+    // 0 boundary — inside the min-width band). Buggy behavior: dragged jamb clamps to 0 but the
+    // width is never floored, producing width 0.25 < MIN_OPENING_WIDTH, which the schema rejects.
+    usePlanStore.getState().resizeOpeningEnd(doorId, 'start', 0)
+    const o = usePlanStore.getState().plan.openings[0]
+    expect(o.width).toBeGreaterThanOrEqual(0.3)
+    expect(o.offset + o.width / 2).toBeCloseTo(0.25, 10) // fixed (end) jamb unmoved
+
+    const plan = usePlanStore.getState().plan
+    expect(parsePlan(serializePlan(plan))).not.toBeNull()
   })
 })
 
