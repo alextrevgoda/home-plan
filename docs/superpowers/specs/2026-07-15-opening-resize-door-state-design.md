@@ -1,7 +1,7 @@
 # Opening Drag-Resize + Door Swing State — Design
 
 Date: 2026-07-15
-Status: approved for planning
+Status: implemented (E2E verified 2026-07-15)
 
 ## Goal
 
