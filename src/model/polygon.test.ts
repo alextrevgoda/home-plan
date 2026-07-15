@@ -182,6 +182,18 @@ describe('pushRoomEdge', () => {
     expect(out.openings.find((o) => o.id === 'd2')).toEqual({ ...wp.openings.find((o) => o.id === 'd2')! })
     expect(out.openings.find((o) => o.id === 'd3')).toEqual({ ...wp.openings.find((o) => o.id === 'd3')! })
   })
+  it('shrinks an opening wider than its shortened edge', () => {
+    // room 4×3; door on edge 1 (east wall, length 3) with width 2.5, offset 1.5
+    // pushing edge 0 (north wall) from y=0 to y=1 leaves edge 1 with length 2
+    const wide = planWith(
+      room(rectToPolygon({ x: 0, y: 0, width: 4, height: 3 })),
+      [{ ...door(1, 1.5), width: 2.5 }],
+    )
+    const out = pushRoomEdge(wide, 'r1', 0, 1)!
+    const o = out.openings[0]
+    expect(o.width).toBe(2)
+    expect(o.offset).toBe(1)
+  })
 })
 
 describe('splitRoomEdge', () => {

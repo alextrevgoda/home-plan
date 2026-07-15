@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { catalogItem, floorFinish } from '../model/catalog'
 import { clampFloorItemPosition, floorItemCollides, floorItemInBounds } from '../model/furniture'
 import { MIN_ROOM_SIZE, normalizeRoundDeg, polygonArea, rectToPolygon, roundCm } from '../model/geometry'
-import { clampOffset, MIN_OPENING_WIDTH, OPENING_DEFAULTS, roomEdge } from '../model/openings'
+import { clampOffset, fitOpeningWidth, MIN_OPENING_WIDTH, OPENING_DEFAULTS, roomEdge } from '../model/openings'
 import {
   mergeRoomCollinear as mergeRoomCollinearOp,
   moveRoomVertex as moveRoomVertexOp,
@@ -148,7 +148,8 @@ export const usePlanStore = create<PlanState>((set) => ({
         if (o.roomId !== id) return o
         const edge = roomEdge(nextRoom, o.edgeIndex)
         if (!edge) return o
-        return { ...o, offset: clampOffset(o.offset, o.width, edge.length) }
+        const width = fitOpeningWidth(o.width, edge.length)
+        return { ...o, width, offset: clampOffset(o.offset, width, edge.length) }
       })
       const furniture = s.plan.furniture.map((f) => {
         if (f.mount !== 'wall' || f.roomId !== id) return f

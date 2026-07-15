@@ -1,4 +1,4 @@
-import { clampOffset, roomEdge } from './openings'
+import { clampOffset, fitOpeningWidth, roomEdge } from './openings'
 import { roundCm } from './geometry'
 import type { Plan, Rect, Room, Vec2 } from './types'
 
@@ -192,9 +192,15 @@ function withRoomPolygon(
     const raw = offset + remap.offsetShift(edgeIndex)
     return { edgeIndex: newIndex, offset: edge ? clampOffset(raw, width, edge.length) : raw }
   }
-  const openings = plan.openings.map((o) =>
-    o.roomId === roomId ? { ...o, ...homeEdge(o.edgeIndex, o.offset, o.width) } : o,
-  )
+  const openings = plan.openings.map((o) => {
+    if (o.roomId !== roomId) return o
+    const newIndex = remap.edgeIndex(o.edgeIndex)
+    const edge = roomEdge(nextRoom, newIndex)
+    const raw = o.offset + remap.offsetShift(o.edgeIndex)
+    if (!edge) return { ...o, edgeIndex: newIndex, offset: raw }
+    const width = fitOpeningWidth(o.width, edge.length)
+    return { ...o, edgeIndex: newIndex, width, offset: clampOffset(raw, width, edge.length) }
+  })
   const furniture = plan.furniture.map((f) =>
     f.mount === 'wall' && f.roomId === roomId
       ? { ...f, ...homeEdge(f.edgeIndex, f.offset, f.size.width) }

@@ -238,6 +238,14 @@ describe('resizeOpeningEnd', () => {
     usePlanStore.getState().resizeOpeningEnd(doorId, 'start', NaN)
     expect(usePlanStore.getState().plan).toBe(before)
   })
+
+  it('updateRoomRect shrinks openings that no longer fit', () => {
+    const { roomId, doorId } = setup()
+    usePlanStore.getState().resizeOpeningEnd(doorId, 'end', 4) // widen first: jambs 1.5→4, width 2.5
+    usePlanStore.getState().updateRoomRect(roomId, { x: 0, y: 0, width: 2, height: 3 })
+    const o = usePlanStore.getState().plan.openings[0]
+    expect(o.width).toBe(2)
+  })
 })
 
 describe('updateOpening door fields', () => {
