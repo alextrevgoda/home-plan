@@ -48,9 +48,10 @@ export interface PlanState {
   setPlacing: (kind: OpeningKind | null) => void
   addOpening: (kind: OpeningKind, roomId: string, edgeIndex: number, offset: number) => string
   moveOpening: (id: string, offset: number) => void
+  resizeOpeningEnd: (id: string, end: 'start' | 'end', t: number) => void
   updateOpening: (
     id: string,
-    patch: Partial<Pick<Opening, 'width' | 'height' | 'sillHeight' | 'offset'>>,
+    patch: Partial<Pick<Opening, 'width' | 'height' | 'sillHeight' | 'offset' | 'hinge' | 'swing' | 'open'>>,
   ) => void
   deleteOpening: (id: string) => void
   placingFurniture: string | null
@@ -266,9 +267,32 @@ export const usePlanStore = create<PlanState>((set) => ({
       }
     }),
 
+  resizeOpeningEnd: (id, end, t) =>
+    set((s) => {
+      if (!Number.isFinite(t)) return s
+      const opening = s.plan.openings.find((o) => o.id === id)
+      const room = opening ? s.plan.rooms.find((r) => r.id === opening.roomId) : undefined
+      const edge = opening && room ? roomEdge(room, opening.edgeIndex) : null
+      if (!opening || !edge) return s
+      const startJamb = opening.offset - opening.width / 2
+      const endJamb = opening.offset + opening.width / 2
+      let next: Opening
+      if (end === 'start') {
+        const jamb = roundCm(clamp(t, 0, Math.max(0, endJamb - MIN_OPENING_WIDTH)))
+        const width = roundCm(endJamb - jamb)
+        next = { ...opening, width, offset: jamb + width / 2 }
+      } else {
+        const jamb = roundCm(clamp(t, Math.min(edge.length, startJamb + MIN_OPENING_WIDTH), edge.length))
+        const width = roundCm(jamb - startJamb)
+        next = { ...opening, width, offset: jamb - width / 2 }
+      }
+      return { plan: { ...s.plan, openings: s.plan.openings.map((o) => (o.id === id ? next : o)) } }
+    }),
+
   updateOpening: (id, patch) =>
     set((s) => {
-      for (const value of Object.values(patch)) {
+      for (const key of ['width', 'height', 'sillHeight', 'offset'] as const) {
+        const value = patch[key]
         if (value !== undefined && !Number.isFinite(value)) return s
       }
       const opening = s.plan.openings.find((o) => o.id === id)
@@ -285,7 +309,12 @@ export const usePlanStore = create<PlanState>((set) => ({
         clamp(patch.height ?? opening.height, 0.3, wallHeight - 0.1 - sillHeight),
       )
       const offset = clampOffset(patch.offset ?? opening.offset, width, edge.length)
-      const next = { ...opening, width, height, sillHeight, offset }
+      const next: Opening = { ...opening, width, height, sillHeight, offset }
+      if (opening.kind === 'door') {
+        if (patch.hinge !== undefined) next.hinge = patch.hinge
+        if (patch.swing !== undefined) next.swing = patch.swing
+        if (patch.open !== undefined) next.open = patch.open
+      }
       return {
         plan: { ...s.plan, openings: s.plan.openings.map((o) => (o.id === id ? next : o)) },
       }

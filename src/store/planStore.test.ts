@@ -188,6 +188,94 @@ describe('openings', () => {
   })
 })
 
+describe('resizeOpeningEnd', () => {
+  // room r1 resized to 4×3; door added on edge 0 (length 4) at offset 2 with
+  // width 1 → jambs at 1.5 and 2.5
+  const setup = () => {
+    const roomId = usePlanStore.getState().addRoom()
+    usePlanStore.getState().updateRoomRect(roomId, { x: 0, y: 0, width: 4, height: 3 })
+    const doorId = usePlanStore.getState().addOpening('door', roomId, 0, 2)
+    usePlanStore.getState().updateOpening(doorId, { width: 1 })
+    return { roomId, doorId }
+  }
+
+  it('dragging the start jamb pins the end jamb', () => {
+    const { doorId } = setup()
+    usePlanStore.getState().resizeOpeningEnd(doorId, 'start', 1.2)
+    const o = usePlanStore.getState().plan.openings[0]
+    expect(o.width).toBeCloseTo(1.3, 10)
+    expect(o.offset + o.width / 2).toBeCloseTo(2.5, 10) // fixed jamb unmoved
+    expect(o.offset - o.width / 2).toBeCloseTo(1.2, 10)
+  })
+
+  it('clamps at MIN_OPENING_WIDTH without moving the fixed jamb', () => {
+    const { doorId } = setup()
+    usePlanStore.getState().resizeOpeningEnd(doorId, 'start', 2.45)
+    const o = usePlanStore.getState().plan.openings[0]
+    expect(o.width).toBeCloseTo(0.3, 10)
+    expect(o.offset + o.width / 2).toBeCloseTo(2.5, 10)
+  })
+
+  it('clamps the dragged jamb to the edge', () => {
+    const { doorId } = setup()
+    usePlanStore.getState().resizeOpeningEnd(doorId, 'start', -5)
+    const o = usePlanStore.getState().plan.openings[0]
+    expect(o.offset - o.width / 2).toBeCloseTo(0, 10)
+    expect(o.width).toBeCloseTo(2.5, 10)
+  })
+
+  it('dragging the end jamb pins the start jamb', () => {
+    const { doorId } = setup()
+    usePlanStore.getState().resizeOpeningEnd(doorId, 'end', 3.1)
+    const o = usePlanStore.getState().plan.openings[0]
+    expect(o.width).toBeCloseTo(1.6, 10)
+    expect(o.offset - o.width / 2).toBeCloseTo(1.5, 10)
+  })
+
+  it('ignores non-finite input', () => {
+    const { doorId } = setup()
+    const before = usePlanStore.getState().plan
+    usePlanStore.getState().resizeOpeningEnd(doorId, 'start', NaN)
+    expect(usePlanStore.getState().plan).toBe(before)
+  })
+})
+
+describe('updateOpening door fields', () => {
+  const setup = () => {
+    const roomId = usePlanStore.getState().addRoom()
+    const doorId = usePlanStore.getState().addOpening('door', roomId, 0, 1.5)
+    const windowId = usePlanStore.getState().addOpening('window', roomId, 1, 1.5)
+    return { roomId, doorId, windowId }
+  }
+
+  it('toggles open and sets hinge/swing on a door', () => {
+    const { doorId } = setup()
+    usePlanStore.getState().updateOpening(doorId, { open: true, hinge: 'end', swing: 'out' })
+    const o = usePlanStore.getState().plan.openings.find((o) => o.id === doorId)!
+    expect(o.open).toBe(true)
+    expect(o.hinge).toBe('end')
+    expect(o.swing).toBe('out')
+  })
+
+  it('ignores door fields on windows', () => {
+    const { windowId } = setup()
+    usePlanStore.getState().updateOpening(windowId, { open: true })
+    const w = usePlanStore.getState().plan.openings.find((o) => o.id === windowId)!
+    expect(w.open).toBeUndefined()
+  })
+})
+
+describe('addOpening door defaults', () => {
+  it('new doors are closed, hinge start, swing in', () => {
+    const roomId = usePlanStore.getState().addRoom()
+    const doorId = usePlanStore.getState().addOpening('door', roomId, 0, 1.5)
+    const o = usePlanStore.getState().plan.openings.find((o) => o.id === doorId)!
+    expect(o.hinge).toBe('start')
+    expect(o.swing).toBe('in')
+    expect(o.open).toBe(false)
+  })
+})
+
 const placeSofa = (x: number, y: number, rotation = 0) =>
   usePlanStore.getState().placeFurniture('sofa-3seat', { mount: 'floor', position: { x, y }, rotation })
 
