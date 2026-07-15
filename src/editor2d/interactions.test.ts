@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultPlan } from '../model/serialization'
 import { rectToPolygon } from '../model/geometry'
-import type { FloorItem, Opening, Plan, Room, WallItem } from '../model/types'
+import type { FloorItem, Opening, Plan, Room, Selection, WallItem } from '../model/types'
 import {
   distToSegmentScreen,
   edgeIsHorizontal,
   hitFurniture,
   hitOpening,
+  hitOpeningJamb,
   hitPolygonHandle,
   hitRadius,
   hitRoom,
@@ -127,6 +128,33 @@ describe('hitOpening', () => {
 
   it('misses outside the radius', () => {
     expect(hitOpening(planWithOpenings([doorA]), viewport, { x: 200, y: 20 })).toBeNull()
+  })
+})
+
+describe('hitOpeningJamb', () => {
+  // 4×3 room, door on edge 0, offset 2, width 1 → jambs at world (1.5,0) and (2.5,0)
+  // viewport scale 50 → screen (75,0) and (125,0)
+  const plan = planWithOpenings([doorA])
+  const viewport = { scale: 50, offsetX: 0, offsetY: 0 }
+  const selection: Selection = { kind: 'opening', id: 'd1' }
+
+  it('hits the start jamb within radius', () => {
+    expect(hitOpeningJamb(plan, selection, viewport, { x: 78, y: 3 }, 8))
+      .toEqual({ openingId: 'd1', end: 'start' })
+  })
+
+  it('hits the end jamb', () => {
+    expect(hitOpeningJamb(plan, selection, viewport, { x: 125, y: -5 }, 8))
+      .toEqual({ openingId: 'd1', end: 'end' })
+  })
+
+  it('misses outside the radius', () => {
+    expect(hitOpeningJamb(plan, selection, viewport, { x: 100, y: 0 }, 8)).toBeNull()
+  })
+
+  it('returns null when the opening is not selected', () => {
+    expect(hitOpeningJamb(plan, null, viewport, { x: 75, y: 0 }, 8)).toBeNull()
+    expect(hitOpeningJamb(plan, { kind: 'room', id: 'A' }, viewport, { x: 75, y: 0 }, 8)).toBeNull()
   })
 })
 

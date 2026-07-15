@@ -2,7 +2,7 @@ import { normalizeRoundDeg, roundCm } from '../model/geometry'
 import { catalogItem, type Layer } from '../model/catalog'
 import { ROTATION_SNAP_DEG, footprintCorners, pointInConvexPolygon, wallItemSpan } from '../model/furniture'
 import { pointInPolygon } from '../model/polygon'
-import type { FloorItem, Plan, Room, Vec2 } from '../model/types'
+import type { FloorItem, Opening, Plan, Room, Selection, Vec2 } from '../model/types'
 import { worldToScreen, screenToWorld, type Viewport } from './viewport'
 import { openingSpan, projectOntoEdge, roomEdge } from '../model/openings'
 
@@ -82,6 +82,34 @@ export function distToSegmentScreen(p: Vec2, a: Vec2, b: Vec2): number {
   const len2 = dx * dx + dy * dy
   const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
   return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t))
+}
+
+export interface OpeningJambHit {
+  openingId: string
+  end: 'start' | 'end'
+}
+
+// Jamb resize handles only exist on the selected opening, so they can't steal
+// pointer-downs from neighboring openings or rooms.
+export function hitOpeningJamb(
+  plan: Plan,
+  selection: Selection | null,
+  viewport: Viewport,
+  screen: Vec2,
+  radius = 8,
+): OpeningJambHit | null {
+  if (selection?.kind !== 'opening') return null
+  const opening = plan.openings.find((o) => o.id === selection.id)
+  const room = opening ? plan.rooms.find((r) => r.id === opening.roomId) : undefined
+  const span = opening && room ? openingSpan(opening, room) : null
+  if (!opening || !span) return null
+  for (const [end, point] of [['start', span.a], ['end', span.b]] as const) {
+    const s = worldToScreen(viewport, point)
+    if (Math.abs(s.x - screen.x) <= radius && Math.abs(s.y - screen.y) <= radius) {
+      return { openingId: opening.id, end }
+    }
+  }
+  return null
 }
 
 export function hitOpening(plan: Plan, viewport: Viewport, screen: Vec2, radius = 8): string | null {

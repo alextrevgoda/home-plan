@@ -2,7 +2,7 @@ import { Container, Graphics, Text } from 'pixi.js'
 import { catalogItem, floorFinish } from '../model/catalog'
 import { polygonArea, rectInBounds, rectsOverlap } from '../model/geometry'
 import { collidingFurnitureIds, wallItemSpan } from '../model/furniture'
-import { openingSpan, openingWarnings, roomEdge } from '../model/openings'
+import { doorSwing, openingSpan, openingWarnings, roomEdge } from '../model/openings'
 import { polygonBounds, polygonCentroid } from '../model/polygon'
 import type { SnapGuide } from '../model/snapping'
 import type { Apartment, FloorItem, PlacedItem, Plan, Room, Selection, Vec2 } from '../model/types'
@@ -167,18 +167,46 @@ export function drawOpenings(g: Graphics, plan: Plan, selection: Selection | nul
     const tick = 6
     g.moveTo(a.x - px * tick, a.y - py * tick).lineTo(a.x + px * tick, a.y + py * tick)
     g.moveTo(b.x - px * tick, b.y - py * tick).lineTo(b.x + px * tick, b.y + py * tick)
+    g.stroke({ width: selected ? 2.5 : 1.5, color })
 
     // 3. symbol
     if (opening.kind === 'door') {
-      // door leaf: single thin line across the gap
-      g.moveTo(a.x, a.y).lineTo(b.x, b.y)
+      const swing = doorSwing(opening, room)
+      if (swing) {
+        const h = worldToScreen(viewport, swing.hinge)
+        const closed = worldToScreen(viewport, swing.closedEnd)
+        const open = worldToScreen(viewport, swing.openEnd)
+        const leaf = opening.open ? open : closed
+        g.moveTo(h.x, h.y).lineTo(leaf.x, leaf.y)
+        g.stroke({ width: selected ? 2.5 : 1.5, color })
+        // quarter swing arc, faint; pick the 90° sweep, never its 270° complement
+        const r = Math.hypot(closed.x - h.x, closed.y - h.y)
+        const a0 = Math.atan2(closed.y - h.y, closed.x - h.x)
+        const a1 = Math.atan2(open.y - h.y, open.x - h.x)
+        const ccw = ((a1 - a0 + Math.PI * 2) % (Math.PI * 2)) > Math.PI
+        g.moveTo(closed.x, closed.y)
+        g.arc(h.x, h.y, r, a0, a1, ccw)
+        g.stroke({ width: 1, color, alpha: 0.45 })
+      } else {
+        g.moveTo(a.x, a.y).lineTo(b.x, b.y)
+        g.stroke({ width: selected ? 2.5 : 1.5, color })
+      }
     } else {
       // window: double parallel lines
       const off = 2
       g.moveTo(a.x + px * off, a.y + py * off).lineTo(b.x + px * off, b.y + py * off)
       g.moveTo(a.x - px * off, a.y - py * off).lineTo(b.x - px * off, b.y - py * off)
+      g.stroke({ width: selected ? 2.5 : 1.5, color })
     }
-    g.stroke({ width: selected ? 2.5 : 1.5, color })
+
+    // 4. jamb resize handles on the selected opening (same language as polygon handles)
+    if (selected) {
+      for (const p of [a, b]) {
+        g.rect(p.x - 4, p.y - 4, 8, 8)
+          .fill({ color: 0xffffff })
+          .stroke({ width: 1.5, color: 0x1d4ed8 })
+      }
+    }
   }
 }
 

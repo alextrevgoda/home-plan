@@ -14,6 +14,7 @@ import {
   edgeIsHorizontal,
   hitFurniture,
   hitOpening,
+  hitOpeningJamb,
   hitPolygonHandle,
   hitRadius,
   hitRoom,
@@ -127,6 +128,7 @@ export function Editor2D() {
         | { kind: 'pushEdge'; roomId: string; edgeIndex: number; horizontal: boolean; startPlan: Plan }
         | { kind: 'moveVertex'; roomId: string; vertexIndex: number; startPlan: Plan }
         | { kind: 'moveOpening'; openingId: string; start: number }
+        | { kind: 'resizeOpening'; openingId: string; end: 'start' | 'end'; startWidth: number; startOffset: number }
         | { kind: 'moveFloorItem'; itemId: string; grabOffset: Vec2; start: { position: Vec2; rotation: number } }
         | { kind: 'moveWallItem'; itemId: string; start: { roomId: string; edgeIndex: number; offset: number } }
         | { kind: 'rotateFurniture'; itemId: string; start: { position: Vec2; rotation: number } }
@@ -227,6 +229,8 @@ export function Editor2D() {
           usePlanStore.setState({ plan: drag.startPlan })
         } else if (drag.kind === 'moveOpening') {
           store.moveOpening(drag.openingId, drag.start)
+        } else if (drag.kind === 'resizeOpening') {
+          store.updateOpening(drag.openingId, { width: drag.startWidth, offset: drag.startOffset })
         } else if (drag.kind === 'moveWallItem') {
           store.moveWallItem(drag.itemId, drag.start.roomId, drag.start.edgeIndex, drag.start.offset)
         } else if (drag.kind === 'moveFloorItem' || drag.kind === 'rotateFurniture') {
@@ -349,6 +353,19 @@ export function Editor2D() {
             start: { position: selFurniture.position, rotation: selFurniture.rotation },
           }
           return
+        }
+
+        // jamb resize handles on the selected opening beat the opening body
+        const jamb = hitOpeningJamb(store.plan, store.selection, viewport, screen, hitRadius(8, e.pointerType))
+        if (jamb) {
+          const opening = store.plan.openings.find((o) => o.id === jamb.openingId)
+          if (opening) {
+            drag = {
+              kind: 'resizeOpening', openingId: jamb.openingId, end: jamb.end,
+              startWidth: opening.width, startOffset: opening.offset,
+            }
+            return
+          }
         }
 
         // openings are small targets on walls — they win over room bodies
@@ -548,6 +565,18 @@ export function Editor2D() {
           markDirty()
         }
 
+        if (drag.kind === 'resizeOpening') {
+          const activeDrag = drag
+          const store = usePlanStore.getState()
+          const opening = store.plan.openings.find((o) => o.id === activeDrag.openingId)
+          const room = opening ? store.plan.rooms.find((r) => r.id === opening.roomId) : undefined
+          const edge = opening && room ? roomEdge(room, opening.edgeIndex) : null
+          if (!opening || !edge) return
+          const world = screenToWorld(viewport, { x: e.global.x, y: e.global.y })
+          store.resizeOpeningEnd(activeDrag.openingId, activeDrag.end, roundCm(projectOntoEdge(edge, world)))
+          markDirty()
+        }
+
         if (drag.kind === 'moveFloorItem') {
           const activeDrag = drag
           const store = usePlanStore.getState()
@@ -727,6 +756,9 @@ export function Editor2D() {
         if (ev.key === 'Escape' && !isTypingTarget(ev)) {
           if (drag.kind !== 'idle') {
             revertDragIfColliding()
+            if (drag.kind === 'resizeOpening') {
+              usePlanStore.getState().updateOpening(drag.openingId, { width: drag.startWidth, offset: drag.startOffset })
+            }
             drag = { kind: 'idle' }
             dragMutated = false
             guides = []
