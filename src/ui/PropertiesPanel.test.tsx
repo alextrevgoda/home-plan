@@ -130,21 +130,21 @@ describe('PropertiesPanel — door state controls', () => {
 
   it('shows door state controls for doors only', () => {
     renderWithDoorSelected() // helper: seed store with 4×3 room + door, selection on it
-    expect(screen.getByRole('button', { name: 'Open', exact: true })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Left', exact: true })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Outward', exact: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Left' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Outward' })).toBeInTheDocument()
   })
 
   it('hides door state controls for windows', () => {
     renderWithWindowSelected()
-    expect(screen.queryByRole('button', { name: 'Open', exact: true })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open' })).toBeNull()
   })
 
   it('toggles open and flips hinge via the store', () => {
     renderWithDoorSelected()
-    fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
     expect(usePlanStore.getState().plan.openings[0].open).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Right', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Right' }))
     expect(usePlanStore.getState().plan.openings[0].hinge).toBe('end')
   })
 })
