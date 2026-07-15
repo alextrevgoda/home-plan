@@ -123,3 +123,42 @@ describe('fillForOpening', () => {
     expect(fillForOpening(doorA, planWith([], [doorA]))).toBeNull()
   })
 })
+
+const door = (patch: Partial<Opening>): Opening => ({
+  ...doorA,
+  ...patch,
+})
+
+const window_ = (patch: Partial<Opening>): Opening => ({
+  ...doorA,
+  id: 'w1',
+  kind: 'window',
+  width: 1.2,
+  height: 1.2,
+  sillHeight: 0.9,
+  ...patch,
+})
+
+describe('fillForOpening open door', () => {
+  it('keeps the closed leaf in the wall plane', () => {
+    const fill = fillForOpening(door({ open: false }), planWith([roomA], [door({ open: false })]))!
+    expect(fill.center[0]).toBeCloseTo(2, 10)
+    expect(fill.center[2]).toBeCloseTo(0, 10)
+    expect(fill.rotationY).toBeCloseTo(0, 10)
+    expect(fill.size[0]).toBeCloseTo(1, 10)
+  })
+
+  it('rotates the open leaf 90° into the room around the hinge', () => {
+    const fill = fillForOpening(door({ open: true }), planWith([roomA], [door({ open: true })]))! // hinge start → world (1.5, 0)
+    expect(fill.center[0]).toBeCloseTo(1.5, 10) // leaf runs from (1.5,0) to (1.5,1)
+    expect(fill.center[2]).toBeCloseTo(0.5, 10)
+    expect(Math.abs(fill.rotationY)).toBeCloseTo(Math.PI / 2, 10)
+    expect(fill.size[0]).toBeCloseTo(1, 10) // leaf length preserved
+    expect(fill.size[2]).toBe(0.04)
+  })
+
+  it('open windows do not exist: window fill unchanged by open flag', () => {
+    const w = fillForOpening(window_({}), planWith([roomA], [window_({})]))!
+    expect(w.size[2]).toBe(0.02)
+  })
+})

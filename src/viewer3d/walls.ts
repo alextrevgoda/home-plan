@@ -1,4 +1,4 @@
-import { mergeIntervals, openingsOnEdge, openingSpan } from '../model/openings'
+import { doorSwing, mergeIntervals, openingsOnEdge, openingSpan } from '../model/openings'
 import type { Opening, Plan, Room } from '../model/types'
 
 export const WALL_THICKNESS = 0.1
@@ -87,6 +87,21 @@ export function fillForOpening(opening: Opening, plan: Plan): OpeningFill | null
   const top = Math.max(bottom, Math.min(opening.sillHeight + opening.height, wallHeight - 0.01))
   const height = top - bottom
   if (height <= MIN_PIECE) return null
+
+  if (opening.kind === 'door' && opening.open) {
+    const swing = doorSwing(opening, room)
+    if (swing) {
+      const dx = swing.openEnd.x - swing.hinge.x
+      const dy = swing.openEnd.y - swing.hinge.y
+      return {
+        kind: 'door',
+        center: [(swing.hinge.x + swing.openEnd.x) / 2, (bottom + top) / 2, (swing.hinge.y + swing.openEnd.y) / 2],
+        size: [Math.hypot(dx, dy), height, 0.04],
+        rotationY: -Math.atan2(dy, dx),
+      }
+    }
+  }
+
   const dx = span.b.x - span.a.x
   const dy = span.b.y - span.a.y
   return {
